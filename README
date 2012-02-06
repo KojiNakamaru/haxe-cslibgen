@@ -1,0 +1,58 @@
+Haxe C# library bindings generator
+
+  Generates Haxe bindings for C# assemblies
+  Usage: cslibgen -o <outputdir> -i <inputdir> <assembly> [<assembly> ..]
+
+  Options:
+
+    -o The output folder into which the bindings will be placed.
+    -i An input directory from which to load assemblies.
+
+The -i option can be specified multiple times to provide multiple input 
+search directories to check for each assembly dll in your assembly list.
+
+It is important to include all assembly dependencies for a given platform 
+when running the "cslibgen" tool, as the class name resolver must have access to all
+class definitions in a given set of assemblies to correctly create unique
+"haxe" class names for generic types.  Typically you will list every assembly
+you will need (and all of their dependencies) for a given project or platform 
+when running this utility.
+
+After generating your haxe class files, you must add the output directory
+to the HAXE_LIBRARY_PATH environment variable.
+
+For example, to add "monotouch" to your libs path, add this:
+
+HAXE_LIBRARY_PATH=/usr/libs/haxe/std:/haxemono/monotouch:./
+
+At this point, you should be able to just reference the C# classes as you
+would any other haxe external class:
+
+For example:
+
+import system.Console;
+
+class Main {
+
+    public function main() : Void {
+    	Console.WriteLine("Hello World!");
+    }
+}
+
+Some conversion details:
+
+Overloaded methods are exported using haxe's @:overload() keyword.
+
+C# gives unique names to generic and non generic types with the same name, 
+the converter will detect non-unique type names and assign these types a suffix
+number for haxe to make them unique (some examples: Tuple1<> Tuple2<>, or 
+IComparable, IComparable1<>, etc.)
+
+C# native arrays are specified as NativeArray<T>.
+
+C# native events are specified as NativeEvent<T>.
+
+C# 32 bit floats are specified as "Single" (handled as a 32 bit float in
+the C# haxe target the same way that UInt is handled in the flash9 target).
+
+Parameterized methods are presently converted to use "Dynamic" parameters.
