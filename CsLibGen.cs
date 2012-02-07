@@ -10,6 +10,7 @@ namespace cslibgen
 	{
 		public static string outputDir = "";
 		public static List<string> assemblies = new List<string>();
+        public static Dictionary<string, TypeDefinition> allTypes = new Dictionary<string, TypeDefinition>(); 
 		public static List<AssemblyDefinition> assemDefs = new List<AssemblyDefinition>();
 		public static List<string> inputDirs = new List<string>();
 		
@@ -39,46 +40,68 @@ namespace cslibgen
 		
 		public static int Main (string[] args)
 		{
-			
-			// Write usage output.
-			if (args.Length == 0) {
-				Console.WriteLine("Haxe C# library bindings generator\n" +
-				                   "  Generates Haxe bindings for C# assemblies\n" +
-				                   "  Usage: cslibgen -o <outputdir> -i <inputdir> <assembly> [<assembly> ..]\n" +
-				                   "  Options:\n" + 
-				                   "  -o The output folder into which the bindings will be placed.\n" +
-				                   "  -i An input directory from which to load assemblies.\n");
-				return 1;
-			}
-			
-			// Parse command line arguments.
-			int i = 0;
-			while (i < args.Length) {
-				if (args[i] == "-o") {
-					outputDir = args[i + 1];
-					i += 2;
-				} else if (args[i] == "-i") {
-					inputDirs.Add(args[i + 1]);
-					i += 2;
-				} else {
-					assemblies.Add(args[i]);
-					i++;
-				}
-			}
-			
-			// Check if we have a valid output dir.
-			if (String.IsNullOrEmpty(outputDir)) {
-				Console.WriteLine("You must specify an output folder.");
-				return 1;
-			}
-			
-			// Check if we have any assemblies.
-			if (assemblies.Count == 0) {
-				Console.WriteLine("You must specify at least one assembly to output.");
-				return 1;
-			}
-			
-			//
+
+		    // Write usage output.
+		    if (args.Length == 0)
+		    {
+		        Console.WriteLine("Haxe C# library bindings generator\n" +
+		                          "  Generates Haxe bindings for C# assemblies\n" +
+		                          "  Usage: cslibgen -o <outputdir> -i <inputdir> <assembly> [<assembly> ..]\n" +
+		                          "  Options:\n" +
+		                          "  -o The output folder into which the bindings will be placed.\n" +
+		                          "  -i An input directory from which to load assemblies.\n");
+		        return 1;
+		    }
+
+		    // Parse command line arguments.
+		    int i = 0;
+		    while (i < args.Length)
+		    {
+		        if (args[i] == "-o")
+		        {
+		            outputDir = args[i + 1];
+		            i += 2;
+		        }
+		        else if (args[i] == "-i")
+		        {
+		            inputDirs.Add(args[i + 1]);
+		            i += 2;
+		        }
+		        else
+		        {
+		            assemblies.Add(args[i]);
+		            i++;
+		        }
+		    }
+
+		    // Check if we have a valid output dir.
+		    if (String.IsNullOrEmpty(outputDir))
+		    {
+		        Console.WriteLine("You must specify an output folder.");
+		        return 1;
+		    }
+
+		    // Check if we have any assemblies.
+		    if (assemblies.Count == 0)
+		    {
+		        Console.WriteLine("You must specify at least one assembly to output.");
+		        return 1;
+		    }
+
+		    var ret = 1;
+
+            try {
+                ret = GenerateLibs();
+            } catch (Exception e) {
+                Console.WriteLine("ERROR: " + e.Message);
+            }
+
+		    return ret;
+		}
+
+        public static int GenerateLibs() {
+
+    	    //
 			// Create output dir if it doesn't already exist.
 			//
 			
@@ -103,7 +126,7 @@ namespace cslibgen
 							try {
 								curAssemDef = AssemblyDefinition.ReadAssembly(assemPath);
 							} catch (Exception e) {
-								Console.WriteLine(e.Message);
+								Console.WriteLine("Error loading assembly " + assemPath + " - " + e.Message);
 								return 1;
 							}
 						}
@@ -129,6 +152,7 @@ namespace cslibgen
 				// Compile a list of all non unique type base names (i.e. Tuple<>, Tuple<,>, Tuple<,,>).  
 				// We use this list to convert these type names using a number suffix later.
 				foreach (var typeDef in curAssemDef.MainModule.Types) {
+				    allTypes[typeDef.FullName] = typeDef;
 					if (typeDef.IsPublic) {
 						List<TypeDefinition> typeList;
 						var nuBaseName = GetNonUniqueFullTypeBaseName(typeDef);
@@ -164,6 +188,12 @@ namespace cslibgen
 			return 0;
 		}
 		
+        public static TypeDefinition GetTypeDef(TypeReference typeRef) {
+            TypeDefinition typeDef = null;
+            allTypes.TryGetValue(typeRef.FullName, out typeDef);
+            return typeDef;
+        }
+
 		// Basically returns the namespace + type name (minus any generic `1 suffixes).
 		public static string GetTypeBaseName (TypeReference typeRef)
 		{
@@ -258,13 +288,15 @@ namespace cslibgen
 			var sw = new System.IO.StringWriter();
 			
 			// Make extends string
-			var extends = typeDef.BaseType != null ? 
-				" extends " + MakeTypeName(typeDef.BaseType, true) : "";
+		    var baseTypeDef = typeDef.BaseType != null ? GetTypeDef(typeDef.BaseType) : null;
+            var extends = baseTypeDef != null ?
+                " extends " + MakeTypeName(baseTypeDef, true) : "";
 			
 			// Make implements string
-			var implementsList = curTypeDef.Interfaces.Count > 0 ?
-				(!String.IsNullOrEmpty(extends) ? "," : "") + " implements " + 
-					String.Join(", implements ", typeDef.Interfaces.Select((arg) => MakeTypeName(arg))) : "";
+		    var publicInterfaces = typeDef.Interfaces.Where((arg) => GetTypeDef(arg) != null && GetTypeDef(arg).IsPublic).ToList();
+            var implementsList = publicInterfaces.Count > 0 ?
+				(!String.IsNullOrEmpty(extends) ? "," : "") + " implements " +
+                    String.Join(", implements ", publicInterfaces.Select((arg) => MakeTypeName(arg))) : "";
 			
 			// Make class/interface declaration
 			if (curTypeDef.IsEnum) {
@@ -308,12 +340,18 @@ namespace cslibgen
 				foreach (var eventDef in curTypeDef.Events) {
 					
 					curEventDef = eventDef;
-					
-					if (eventDef.AddMethod.IsPublic) {
-					
-						sw.Write("\tpublic " + (eventDef.AddMethod.IsStatic ? "static " : "") + 
-						         "var " + eventDef.Name + "(default,null) : cs.NativeEvent<system.EventArgs>;\n");
-					}
+
+				    var eventArgType = GetEventArgType(eventDef.EventType);
+
+                    if (eventArgType != null) {
+
+                        if (eventDef.AddMethod.IsPublic)
+                        {
+
+                            sw.Write("\tpublic " + (eventDef.AddMethod.IsStatic ? "static " : "") +
+                                     "var " + eventDef.Name + "(default,null) : cs.NativeEvent<" + MakeTypeName(eventArgType) + ">;\n");
+                        }
+                    }
 
 				}
 				
@@ -458,7 +496,18 @@ namespace cslibgen
 			
 			os.Close();
 		}
-		
+
+        public static TypeReference GetEventArgType(TypeReference handlerRef) {
+            var handlerDef = GetTypeDef(handlerRef);
+            if (handlerDef != null) {
+                var invokeMethod = handlerDef.Methods.SingleOrDefault((arg) => arg.Name == "Invoke");
+                if (invokeMethod != null && invokeMethod.Parameters.Count == 2) {
+                    return invokeMethod.Parameters[1].ParameterType;
+                }
+            }
+            return null;
+        }
+
 		public static bool IsOverridenMethod(MethodDefinition methodDef)
 		{
 			return (methodDef.IsVirtual && !methodDef.IsNewSlot);
