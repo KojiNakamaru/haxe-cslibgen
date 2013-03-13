@@ -11,25 +11,25 @@
     <AssemblyName>cslibgen</AssemblyName>
   </PropertyGroup>
   <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Debug|x86' ">
-    <DebugSymbols>true</DebugSymbols>
+    <DebugSymbols>True</DebugSymbols>
     <DebugType>full</DebugType>
-    <Optimize>false</Optimize>
+    <Optimize>False</Optimize>
     <OutputPath>bin\Debug</OutputPath>
     <DefineConstants>DEBUG;</DefineConstants>
     <ErrorReport>prompt</ErrorReport>
     <WarningLevel>4</WarningLevel>
     <PlatformTarget>x86</PlatformTarget>
-    <Externalconsole>true</Externalconsole>
-    <Commandlineparameters>-o /Users/bcooley/projects/haxe/mandroid-14 -i /Developer/MonoAndroid/usr/lib/mono/2.1 -i /Developer/MonoAndroid/usr/lib/mandroid/platforms/android-14 Mono.Data.Sqlite.dll Mono.Data.tds.dll Mono.Security.dll Mono.Android.dll Mono.Android.GoogleMaps.dll mscorlib.dll OpenTK.dll System.Core.dll System.Data.dll System.Data.Services.Client.dll System.dll System.json.dll System.Numerics.dll System.Runtime.Serialization.dll System.ServiceModel.dll System.ServiceModel.Web.dll System.Transactions.dll System.Web.Services.dll System.Xml.dll System.Xml.Linq.dll</Commandlineparameters>
+    <Externalconsole>True</Externalconsole>
+    <Commandlineparameters>-o /Users/dogles/dev/pro/dotnet -i /Applications/Unity/MonoDevelop.app/Contents/Frameworks/Mono.framework/Versions/Current/lib/mono/2.0/ System.dll System.Core.dll System.Configuration.dll System.Xml.dll mscorlib.dll</Commandlineparameters>
   </PropertyGroup>
   <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Release|x86' ">
     <DebugType>none</DebugType>
-    <Optimize>false</Optimize>
+    <Optimize>False</Optimize>
     <OutputPath>bin\Release</OutputPath>
     <ErrorReport>prompt</ErrorReport>
     <WarningLevel>4</WarningLevel>
     <PlatformTarget>x86</PlatformTarget>
-    <Externalconsole>true</Externalconsole>
+    <Externalconsole>True</Externalconsole>
   </PropertyGroup>
   <ItemGroup>
     <Reference Include="System" />
