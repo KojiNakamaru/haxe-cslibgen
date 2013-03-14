@@ -29,9 +29,9 @@ namespace cslibgen {
       "dynamic", "package", "callback", "inline", "using"
     };
     public static System.IO.StreamWriter os;
-    
+
     public static int Main(string[] args) {
-      
+
       // Write usage output.
       if ( args.Length == 0 ) {
         Console.WriteLine("Haxe C# library bindings generator\n" +
@@ -42,7 +42,7 @@ namespace cslibgen {
                           "  -i An input directory from which to load assemblies.\n");
         return 1;
       }
-      
+
       // Parse command line arguments.
       int i = 0;
       while ( i < args.Length ) {
@@ -57,48 +57,48 @@ namespace cslibgen {
           i++;
         }
       }
-      
+
       // Check if we have a valid output dir.
       if ( String.IsNullOrEmpty(outputDir) ) {
         Console.WriteLine("You must specify an output folder.");
         return 1;
       }
-      
+
       // Check if we have any assemblies.
       if ( assemblies.Count == 0 ) {
         Console.WriteLine("You must specify at least one assembly to output.");
         return 1;
       }
-      
+
       var ret = 1;
-      
+
       //try {
         ret = GenerateLibs();
       //} catch ( Exception e ) {
       //  Console.WriteLine("ERROR: " + e.Message);
       //}
-      
+
       return ret;
     }
-    
+
     public static int GenerateLibs() {
-      
+
       //
       // Create output dir if it doesn't already exist.
       //
-      
+
       System.IO.Directory.CreateDirectory(outputDir);
-      
+
       typesByBaseName = new Dictionary<string, List<TypeDefinition>>();
-      
+
       //
       // Find and load all assemblies..
       //
-      
+
       foreach ( var assemblyName in assemblies ) {
-        
+
         AssemblyDefinition curAssemDef = null;
-        
+
         if ( System.IO.Path.IsPathRooted(assemblyName) ) {
           curAssemDef = AssemblyDefinition.ReadAssembly(assemblyName);
         } else {
@@ -114,21 +114,21 @@ namespace cslibgen {
             }
           }
         }
-        
+
         if ( curAssemDef == null ) {
           Console.WriteLine("Unable to find assembly " + assemblyName + "!");
           return 1;
         }
-        
+
         assemDefs.Add(curAssemDef);
       }
-      
+
       //
       // Now process all types in all assemblies to ensure that all type names are unique.
       //
-      
+
       foreach ( var assemDef in assemDefs ) {
-        // Compile a list of all non unique type base names (i.e. Tuple<>, Tuple<,>, Tuple<,,>).  
+        // Compile a list of all non unique type base names (i.e. Tuple<>, Tuple<,>, Tuple<,,>).
         // We use this list to convert these type names using a number suffix later.
         foreach ( var typeDef in assemDef.MainModule.Types ) {
           allTypes[typeDef.FullName] = typeDef;
@@ -139,16 +139,16 @@ namespace cslibgen {
               typeList = new List<TypeDefinition>();
               typesByBaseName[nuBaseName] = typeList;
             }
-            
+
             typeList.Add(typeDef);
           }
         }
       }
-      
+
       //
       // Output all public types to files.
       //
-      
+
       foreach ( var assemDef in assemDefs ) {
 
         // Now create the actual haxe binding file for each public type.
@@ -156,32 +156,31 @@ namespace cslibgen {
           foreach ( var typeDef in module.Types ) {
             if ( typeDef.IsPublic ) { // && typeDef.FullName == "System.TimeZoneInfo") {
               Console.WriteLine(typeDef.FullName);
-              WriteTopLevelTypeDef(typeDef);      
+              WriteTopLevelTypeDef(typeDef);
             }
-          }   
-        }       
+          }
+        }
       }
-      
+
       return 0;
     }
-    
+
     public static TypeDefinition GetTypeDef(TypeReference typeRef) {
       TypeDefinition typeDef = null;
       allTypes.TryGetValue(typeRef.FullName, out typeDef);
       return typeDef;
     }
-    
+
     // Returns the base type name (minus namespace and any generic `1 suffixes).
     public static string GetTypeBaseName(TypeReference typeRef) {
       var p = typeRef.Name.IndexOf('`');
-      string name;
       if ( p != -1 ) {
         return typeRef.Name.Substring(0, p);
       } else {
         return typeRef.Name;
       }
-    }   
-    
+    }
+
     // Basically returns the namespace + type name (minus any generic `1 suffixes).
     public static string GetNonUniqueFullTypeBaseName(TypeReference typeRef) {
       var sb = new StringBuilder();
@@ -219,7 +218,7 @@ namespace cslibgen {
       }
       return sb.ToString();
     }
-    
+
     // Gets a guaranteed unique simple type name (by adding number indexes for non-unique generic types).
     public static string GetFinalTypeBaseName(TypeReference typeRef) {
       List<TypeDefinition> typeList;
@@ -276,38 +275,38 @@ namespace cslibgen {
       }
       return name;
     }
-    
+
     public static void WriteTopLevelTypeDef(TypeDefinition typeDef) {
-      curNs = typeDef.Namespace; 
+      curNs = typeDef.Namespace;
       curNsPath = typeDef.Namespace.ToLower().Replace(".", System.IO.Path.DirectorySeparatorChar.ToString());
       curFilePath = System.IO.Path.Combine(outputDir, curNsPath);
       curTypeName = GetFinalTypeBaseName(typeDef);
       curFileName = System.IO.Path.Combine(curFilePath, curTypeName + ".hx");
-      
+
       System.IO.Directory.CreateDirectory(curFilePath);
-      
+
       curImports = new Dictionary<string, TypeReference>();
-      
+
       ResetUsedTypeNames();
 
       var sw = new System.IO.StringWriter();
       WriteTypeDef(typeDef, sw);
 
       os = new System.IO.StreamWriter(curFileName);
-      
-      os.Write("package dotnet." + typeDef.Namespace.ToLower() + ";\n\n");
+
+      os.Write("package " + typeDef.Namespace + ";\n\n");
 
       //      var sortedRefs = curImports.ToList().OrderBy((arg) => arg.Key);
-      //      
+      //
       //      foreach (var typeRefPair in sortedRefs) {
       //        var typeRef = typeRefPair.Value;
-      //        os.WriteLine("import " + typeRef.Namespace.ToLower() + "." + GetFinalTypeBaseName(typeRef) + ";");        
+      //        os.WriteLine("import " + typeRef.Namespace.ToLower() + "." + GetFinalTypeBaseName(typeRef) + ";");
       //      }
-      //      
+      //
       //      os.WriteLine();
-      
+
       os.Write(sw.GetStringBuilder().ToString());
-      
+
       os.Close();
     }
 
@@ -318,32 +317,32 @@ namespace cslibgen {
       var baseTypeDef = typeDef.BaseType != null ? GetTypeDef(typeDef.BaseType) : null;
       var extends = baseTypeDef != null ?
         " extends " + MakeTypeName(baseTypeDef, true) : "";
-      
+
       // Make implements string
       var publicInterfaces = typeDef.Interfaces.Where((arg) => GetTypeDef(arg) != null && GetTypeDef(arg).IsPublic).ToList();
       var implementsList = publicInterfaces.Count > 0 ?
         (!String.IsNullOrEmpty(extends) ? "," : "") + " implements " +
           String.Join(", implements ", publicInterfaces.Select((arg) => MakeTypeName(arg))) : "";
-      
+
       // Make class/interface declaration
       if ( typeDef.IsEnum ) {
-        
+
         //
         // We're an enum
         //
-        
-        sw.Write("@:fakeEnum(" + MakeTypeName(GetEnumUnderlyingType(typeDef)) + 
+
+        sw.Write("@:fakeEnum(" + MakeTypeName(GetEnumUnderlyingType(typeDef)) +
                  ") @:native(\"" + GetNonUniqueFullTypeBaseName(typeDef) + "\")\n" +
                  "extern enum " + curFullTypeName + " {\n");
-        
+
         foreach ( var fieldDef in typeDef.Fields ) {
           if ( fieldDef.IsStatic && fieldDef.Name != "__value" ) {
             sw.Write("\t" + fieldDef.Name + ";\n");
           }
         }
-        
-        sw.WriteLine("}\n");        
-        
+
+        sw.WriteLine("}\n");
+
       } else {
 
 
@@ -360,17 +359,17 @@ namespace cslibgen {
         //
         // We're an interface or class
         //
-        
+
         sw.Write("@:native(\"" + GetNonUniqueFullTypeBaseName(typeDef) + "\")");
-        
+
         if ( typeDef.IsSealed && !typeDef.IsInterface ) {
           sw.Write(" @:final");
         }
-        
+
         sw.Write("\n");
-        
+
         sw.Write("extern " + (typeDef.IsInterface ? "interface " : "class ") + curFullTypeName + extends + implementsList + " {\n");
-        
+
         //
         // Write Event Definitions
         //
@@ -378,100 +377,100 @@ namespace cslibgen {
         foreach ( var eventDef in typeDef.Events ) {
 
           var eventArgType = GetEventArgType(eventDef.EventType);
-          
+
           if ( eventArgType != null ) {
-            
+
             if ( eventDef.AddMethod.IsPublic ) {
-              
+
               sw.Write("\tpublic " + (eventDef.AddMethod.IsStatic ? "static " : "") +
-                       "var " + eventDef.Name + "(default,null) : dotnet.system.NativeEvent<" + MakeTypeName(eventArgType) + ">;\n");
+                       "var " + eventDef.Name + "(default,null) : cs.system.NativeEvent<" + MakeTypeName(eventArgType) + ">;\n");
             }
           }
-          
+
         }
 
         //
         // Write Field Definitions
         //
-        
+
         foreach ( var fieldDef in typeDef.Fields ) {
 
           if ( fieldDef.IsPublic ) {
-            
-            sw.Write("\tpublic " + (fieldDef.IsStatic ? "static " : "") + 
-                     "var " + fieldDef.Name + " : " + 
+
+            sw.Write("\tpublic " + (fieldDef.IsStatic ? "static " : "") +
+                     "var " + fieldDef.Name + " : " +
                      MakeTypeName(fieldDef.FieldType) + ";\n");
           }
-          
+
         }
 
         //
         // Write Property Definitions
         //
-        
+
         foreach ( var propDef in typeDef.Properties ) {
 
           var getter = propDef.GetMethod;
           var setter = propDef.SetMethod;
-          
+
           if ( ((getter != null && getter.IsPublic && !IsHiddenOverride(getter)) ||
-                (setter != null && setter.IsPublic && !IsHiddenOverride(setter))) && 
+                (setter != null && setter.IsPublic && !IsHiddenOverride(setter))) &&
               !propDef.HasParameters ) {
-            
+
             if ( getter != null && getter.IsPublic &&
                 setter != null && setter.IsPublic ) {
-              
-              sw.Write("\t" + MakeMethodAttributes(getter ?? setter) 
+
+              sw.Write("\t" + MakeMethodAttributes(getter ?? setter)
                        + "var " + propDef.Name + " : " +
                        MakeTypeName(propDef.PropertyType) + ";\n");
-              
+
             } else {
-              
-              sw.Write("\t" + MakeMethodAttributes(getter ?? setter) 
-                       + "var " + propDef.Name + "(" + 
-                       (getter != null && getter.IsPublic ? "default" : "null") + "," +
-                       (setter != null && setter.IsPublic ? "default" : "null") + ") : " +
+
+              sw.Write("\t@:skipReflection" + MakeMethodAttributes(getter ?? setter)
+                       + "var " + propDef.Name + "(" +
+                       (getter != null && getter.IsPublic ? "default" : "never") + "," +
+                       (setter != null && setter.IsPublic ? "default" : "never") + ") : " +
                        MakeTypeName(propDef.PropertyType) + ";\n");
-              
+
             }
           }
-          
+
         }
 
         //
         // Write Method Definitions
         //
-        
+
         // First collect and sort instance methods by unique name..
-        
+
         var uniqueMethods = new Dictionary<string, List<Tuple<string, string, string, MethodDefinition>>>();
-        
+
         foreach ( var methodDef in typeDef.Methods ) {
           curMethDef = methodDef;
           var methodName = GetUnadornedMethodName(methodDef);
-          if ( !methodDef.IsStatic && (methodDef.IsPublic || methodDef.IsVirtual) && 
+          if ( !methodDef.IsStatic && (methodDef.IsPublic || methodDef.IsVirtual) &&
               !IsHiddenOverride(methodDef) && !methodDef.Name.StartsWith("op_") &&
               !methodDef.IsGetter && !methodDef.IsSetter && !methodDef.IsRemoveOn && !methodDef.IsAddOn ) {
-            
+
             List<Tuple<string,string,string,MethodDefinition>> methList;
             if ( !uniqueMethods.TryGetValue(methodName, out methList) ) {
               methList = new List<Tuple<string,string,string,MethodDefinition>>();
               uniqueMethods[methodName] = methList;
             }
-            
+
             string methodAttrs = MakeMethodAttributes(methodDef);
             string methodDecl;
-            
+
             if ( methodDef.IsConstructor ) {
-              
+
               methodName = "new";
               methodDecl = "(" + MakeMethodParams(methodDef) + ") : Void";
-              
+
             } else {
-              
+
               methodDecl = "(" + MakeMethodParams(methodDef) + ") : " +
                 MakeTypeName(methodDef.ReturnType);
-            } 
+            }
 
             methList.Add(new Tuple<string,string,string,MethodDefinition>(methodAttrs, methodName, methodDecl, methodDef));
           }
@@ -483,7 +482,7 @@ namespace cslibgen {
         foreach ( var methodDef in typeDef.Methods ) {
           curMethDef = methodDef;
           var methodName = GetUnadornedMethodName(methodDef);
-          if ( methodDef.IsStatic && methodDef.IsPublic && 
+          if ( methodDef.IsStatic && methodDef.IsPublic &&
               !methodDef.Name.StartsWith("op_") &&
               !methodDef.IsGetter && !methodDef.IsSetter && !methodDef.IsRemoveOn && !methodDef.IsAddOn ) {
 
@@ -500,7 +499,7 @@ namespace cslibgen {
               if ( uniqueMethods.ContainsKey(methodName) ) {
                 requiresStaticClass = true;
               }
-             
+
               string methodAttrs = MakeMethodAttributes(methodDef);
               string methodDecl = "(" + MakeMethodParams(methodDef) + ") : " +
                   MakeTypeName(methodDef.ReturnType);
@@ -530,22 +529,22 @@ namespace cslibgen {
           sw.Write(" @:final");
 
           sw.Write("\n");
-          
+
           sw.Write("extern class " + curFullTypeName + "_Static {\n");
 
           writeMethods(uniqueStaticMethods, sw);
           sw.WriteLine("}\n");
         }
-      }      
+      }
     }
 
     public static void writeMethods(Dictionary<string, List<Tuple<string, string, string, MethodDefinition>>> uniqueMethods, System.IO.StringWriter sw) {
       var sortedMethods = uniqueMethods.OrderBy((arg) => arg.Key).ToList();
-      
+
       foreach ( var methodDefPair in sortedMethods ) {
-        
+
         var methList = methodDefPair.Value.OrderByDescending((arg) => arg.Item4.Parameters.Count).ThenByDescending((arg) => arg.Item3).ToList();
-        
+
         sw.WriteLine();
 
         if ( methList.Count > 1 ) {
@@ -555,7 +554,7 @@ namespace cslibgen {
             }
           }
         }
-        
+
         for ( int i = 0; i < methList.Count; i++ ) {
           if ( i < methList.Count - 1 ) {
             sw.Write("\t@:overload(function" + methList[i].Item3 + " {})\n");
@@ -565,7 +564,7 @@ namespace cslibgen {
         }
       }
     }
-    
+
     public static TypeReference GetEventArgType(TypeReference handlerRef) {
       var handlerDef = GetTypeDef(handlerRef);
       if ( handlerDef != null ) {
@@ -576,7 +575,7 @@ namespace cslibgen {
       }
       return null;
     }
-    
+
     public static bool IsHiddenOverride(MethodDefinition methodDef) {
       if (methodDef.IsConstructor) return false;
 
@@ -585,7 +584,7 @@ namespace cslibgen {
 
       if ( methodDef.IsVirtual ) {
         var appearsInItf = methodDef.DeclaringType.Interfaces.Any((itf) => {
-          return MethodDeclaredInInterface(itf.Resolve(), methodDef); 
+          return MethodDeclaredInInterface(itf.Resolve(), methodDef);
         });
         if ( appearsInBase ) {
           return true;
@@ -599,7 +598,7 @@ namespace cslibgen {
     public static bool MethodDeclaredInInterface(TypeDefinition itf, MethodDefinition methodDef) {
       var methodName = GetUnadornedMethodName(methodDef);
       foreach ( var itfMethod in itf.Methods ) {
-        if ( GetUnadornedMethodName(itfMethod) == methodName ) { 
+        if ( GetUnadornedMethodName(itfMethod) == methodName ) {
           return true;
         }
       }
@@ -620,7 +619,7 @@ namespace cslibgen {
       while ( curBase != null ) {
         var resolved = curBase.Resolve();
         foreach ( var baseMethod in resolved.Methods ) {
-          if ( GetUnadornedMethodName(baseMethod) == methodName ) { 
+          if ( GetUnadornedMethodName(baseMethod) == methodName ) {
             return true;
           }
         }
@@ -628,7 +627,7 @@ namespace cslibgen {
       }
       return false;
     }
-    
+
     public static void ResetUsedTypeNames() {
       curUsedTypeNames = new HashSet<string>();
       string[] names = {
@@ -641,7 +640,7 @@ namespace cslibgen {
         "Void",
         "Class",
         "Date",
-        "StringBuf", 
+        "StringBuf",
         "DateTools",
         "Enum",
         "EReg",
@@ -649,7 +648,7 @@ namespace cslibgen {
         "IntHash",
         "IntIter",
         "Lambda",
-        "List", 
+        "List",
         "Math",
         "Reflect",
         "Std",
@@ -664,7 +663,7 @@ namespace cslibgen {
         curUsedTypeNames.Add(n);
       }
     }
-    
+
     public static string MakeMethodAttributes(MethodDefinition methodDef) {
       var sb = new StringBuilder();
       if ( methodDef.IsPublic && !methodDef.DeclaringType.IsInterface ) {
@@ -678,51 +677,53 @@ namespace cslibgen {
       }
       return sb.ToString();
     }
-    
+
     public static string MakeTypeName(TypeReference typeRef, bool useExactType = false) {
       if ( typeRef.IsGenericParameter ) {
-        
+
         // Handle generic methods with arrays with type parameters..
-        if ( curMethDef != null && curMethDef.HasGenericParameters && typeRef.IsGenericParameter && 
+        if ( curMethDef != null && curMethDef.HasGenericParameters && typeRef.IsGenericParameter &&
           curMethDef.GenericParameters.FirstOrDefault((arg) => arg.Name == typeRef.Name) != null ) {
           return "Dynamic";
         }
-        
+
         return typeRef.Name;
       }
-      
+
       if ( typeRef.IsByReference || typeRef.IsPointer ) {
-        return MakeTypeName(typeRef.GetElementType());
+    return MakeTypeName(typeRef.GetElementType());
       }
-      
+
       if ( typeRef is ArrayType ) {
         var arrayType = typeRef as ArrayType;
-        
+
         // Handle generic methods with arrays with type parameters..
-        if ( curMethDef != null && curMethDef.HasGenericParameters && arrayType.ElementType.IsGenericParameter && 
+        if ( curMethDef != null && curMethDef.HasGenericParameters && arrayType.ElementType.IsGenericParameter &&
           curMethDef.GenericParameters.FirstOrDefault((arg) => arg.Name == arrayType.ElementType.Name) != null ) {
-          
+
           // Must be an array type (C# will automatically fill in the type parameter based on the array).
-          return "dotnet.system.Array";
+          return "cs.system.Array";
         }
-        
-        return "cs.NativeArray" + 
-          (arrayType.Dimensions.Count > 1 ? arrayType.Dimensions.Count.ToString() : "") + 
+
+        return "cs.NativeArray" +
+          (arrayType.Dimensions.Count > 1 ? arrayType.Dimensions.Count.ToString() : "") +
           "<" + MakeTypeName(arrayType.ElementType, true) + ">";
       }
-      
+
       if ( useExactType ) {
         switch ( typeRef.FullName ) {
-        case "System.String": 
+        case "System.String":
           return "String";
-        case "System.Boolean": 
+        case "System.Boolean":
           return "Bool";
-        case "System.Double": 
+        case "System.Double":
           return "Float";
         case "System.Int32":
           return "Int";
         case "System.UInt32":
           return "UInt";
+        case "System.Object":
+          return "Dynamic";
         }
       } else {
         switch ( typeRef.FullName ) {
@@ -730,12 +731,12 @@ namespace cslibgen {
           return "Void";
         case "System.Object":
           return "Dynamic";
-        case "System.String": 
+        case "System.String":
           return "String";
-        case "System.Boolean": 
+        case "System.Boolean":
           return "Bool";
         case "System.Single":
-        case "System.Double": 
+        case "System.Double":
           return "Float";
         case "System.SByte":
         case "System.Int16":
@@ -745,21 +746,23 @@ namespace cslibgen {
         case "System.UInt16":
         case "System.UInt32":
           return "UInt";
+        case "System.IntPtr":
+          return "cs.Pointer<Int>";
         }
       }
-      
+
       var typeBaseName = GetFinalTypeBaseName(typeRef);
       //      var fullTypeName = typeRef.Namespace + "." + typeBaseName;
-      
+
       //      // Add this type to the imports list..
       //      if (fullTypeName != curFullTypeName) {
       //        curImports[fullTypeName] = typeRef;
       //      }
-      
+
       // Make full type name (including generic params).
       var sb = new StringBuilder();
       if ( typeRef.Namespace != null && typeRef.Namespace.Length > 0 && typeRef.Namespace != curNs ) {
-        sb.Append("dotnet." + typeRef.Namespace.ToLower() + ".");
+        sb.Append("cs." + typeRef.Namespace.ToLower() + ".");
       }
       sb.Append(typeBaseName);
 
@@ -772,17 +775,17 @@ namespace cslibgen {
             sb.Append(",");
           }
           if ( genericType.IsGenericParameter ) {
-            
+
             // If we're a method with generic parameters, we have to figure out how to make a parameter Haxe will allow.
             if ( curMethDef != null ) {
               if ( curMethDef.HasGenericParameters &&
                   curMethDef.GenericParameters.FirstOrDefault((arg) => arg.Name == genericType.Name) != null ) {
                 if ( typeRef.Namespace == "System.Collections.Generic" && typeBaseName == "IEnumerable" ) {
-                  return "dotnet.system.collections.IEnumerable"; // Anything that implements IEnumerable<T> always implements IEnumerable.
+                  return "cs.system.collections.IEnumerable"; // Anything that implements IEnumerable<T> always implements IEnumerable.
                 } else if ( typeRef.Namespace == "System.Collections.Generic" && typeBaseName == "IComparer" ) {
-                  return "dotnet.system.collections.IComparer"; // Anything that implements IEnumerable<T> always implements IEnumerable.
+                  return "cs.system.collections.IComparer"; // Anything that implements IEnumerable<T> always implements IEnumerable.
                 } else if ( typeRef.Namespace == "System" && typeBaseName == "IComparable" ) {
-                  return "dotnet.system.IComparable"; // Anything that implements IComparable<T> always implements IComparable.
+                  return "cs.system.IComparable"; // Anything that implements IComparable<T> always implements IComparable.
                 } else {
                   // We'll just have to punt generic method's generic parameters to "Dynamic" if we can't use a non
                   // parameterized type above.
@@ -790,7 +793,7 @@ namespace cslibgen {
                 }
               }
             }
-            
+
             sb.Append(genericType.Name);
           } else {
             sb.Append(MakeTypeName(genericType, true));
@@ -799,10 +802,10 @@ namespace cslibgen {
         }
         sb.Append(">");
       }
-      
-      return sb.ToString();     
+
+      return sb.ToString();
     }
-    
+
     public static string MakeParamName(string name) {
       if ( haxeKeywords.Contains(name) ) {
         return "_" + name;
@@ -810,7 +813,7 @@ namespace cslibgen {
         return name;
       }
     }
-    
+
     public static string MakeMethodParams(MethodDefinition methodDef) {
       var sb = new StringBuilder();
       var first = true;
@@ -825,18 +828,18 @@ namespace cslibgen {
       }
       return sb.ToString();
     }
-    
-    public static TypeReference GetEnumUnderlyingType(TypeDefinition typeDef) { 
-      if ( !typeDef.IsEnum ) 
-        throw new ArgumentException(); 
-      var fields = typeDef.Fields; 
-      for ( int i = 0; i < fields.Count; i++ ) { 
-        var field = fields[i]; 
-        if ( !field.IsStatic ) 
-          return field.FieldType; 
-      } 
-      throw new ArgumentException(); 
-    } 
-    
+
+    public static TypeReference GetEnumUnderlyingType(TypeDefinition typeDef) {
+      if ( !typeDef.IsEnum )
+        throw new ArgumentException();
+      var fields = typeDef.Fields;
+      for ( int i = 0; i < fields.Count; i++ ) {
+        var field = fields[i];
+        if ( !field.IsStatic )
+          return field.FieldType;
+      }
+      throw new ArgumentException();
+    }
+
   }
 }
