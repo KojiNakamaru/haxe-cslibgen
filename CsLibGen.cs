@@ -294,7 +294,7 @@ namespace cslibgen {
 
       os = new System.IO.StreamWriter(curFileName);
 
-      os.Write("package " + typeDef.Namespace + ";\n\n");
+      os.Write("package " + typeDef.Namespace.ToLower() + ";\n\n");
 
       //      var sortedRefs = curImports.ToList().OrderBy((arg) => arg.Key);
       //
@@ -691,7 +691,7 @@ namespace cslibgen {
       }
 
       if ( typeRef.IsByReference || typeRef.IsPointer ) {
-    return MakeTypeName(typeRef.GetElementType());
+        return MakeTypeName(typeRef.GetElementType());
       }
 
       if ( typeRef is ArrayType ) {
