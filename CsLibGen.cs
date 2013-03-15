@@ -337,7 +337,7 @@ namespace cslibgen {
 
         foreach ( var fieldDef in typeDef.Fields ) {
           if ( fieldDef.IsStatic && fieldDef.Name != "__value" ) {
-            sw.Write("\t" + fieldDef.Name + ";\n");
+            sw.Write("" + fieldDef.Name + ";\n");
           }
         }
 
@@ -382,7 +382,7 @@ namespace cslibgen {
 
             if ( eventDef.AddMethod.IsPublic ) {
 
-              sw.Write("\tpublic " + (eventDef.AddMethod.IsStatic ? "static " : "") +
+              sw.Write("  public " + (eventDef.AddMethod.IsStatic ? "static " : "") +
                        "var " + eventDef.Name + "(default,null) : cs.system.NativeEvent<" + MakeTypeName(eventArgType) + ">;\n");
             }
           }
@@ -397,7 +397,7 @@ namespace cslibgen {
 
           if ( fieldDef.IsPublic ) {
 
-            sw.Write("\tpublic " + (fieldDef.IsStatic ? "static " : "") +
+            sw.Write("  public " + (fieldDef.IsStatic ? "static " : "") +
                      "var " + fieldDef.Name + " : " +
                      MakeTypeName(fieldDef.FieldType) + ";\n");
           }
@@ -420,13 +420,13 @@ namespace cslibgen {
             if ( getter != null && getter.IsPublic &&
                 setter != null && setter.IsPublic ) {
 
-              sw.Write("\t" + MakeMethodAttributes(getter ?? setter)
+              sw.Write("  " + MakeMethodAttributes(getter ?? setter)
                        + "var " + propDef.Name + " : " +
                        MakeTypeName(propDef.PropertyType) + ";\n");
 
             } else {
 
-              sw.Write("\t@:skipReflection " + MakeMethodAttributes(getter ?? setter)
+              sw.Write("  @:skipReflection " + MakeMethodAttributes(getter ?? setter)
                        + "var " + propDef.Name + "(" +
                        (getter != null && getter.IsPublic ? "default" : "never") + "," +
                        (setter != null && setter.IsPublic ? "default" : "never") + ") : " +
@@ -557,9 +557,9 @@ namespace cslibgen {
 
         for ( int i = 0; i < methList.Count; i++ ) {
           if ( i < methList.Count - 1 ) {
-            sw.Write("\t@:overload(function" + methList[i].Item3 + " {})\n");
+            sw.Write("  @:overload(function" + methList[i].Item3 + " {})\n");
           } else {
-            sw.Write("\t" + methList[i].Item1 + "function " + methList[i].Item2 + methList[i].Item3 + ";\n");
+            sw.Write("  " + methList[i].Item1 + "function " + methList[i].Item2 + methList[i].Item3 + ";\n");
           }
         }
       }
