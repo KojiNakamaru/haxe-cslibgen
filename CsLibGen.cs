@@ -697,13 +697,13 @@ namespace cslibgen {
       if ( typeRef is ArrayType ) {
         var arrayType = typeRef as ArrayType;
 
-        // Handle generic methods with arrays with type parameters..
-        if ( curMethDef != null && curMethDef.HasGenericParameters && arrayType.ElementType.IsGenericParameter &&
-          curMethDef.GenericParameters.FirstOrDefault((arg) => arg.Name == arrayType.ElementType.Name) != null ) {
+        // // Handle generic methods with arrays with type parameters..
+        // if ( curMethDef != null && curMethDef.HasGenericParameters && arrayType.ElementType.IsGenericParameter &&
+        //   curMethDef.GenericParameters.FirstOrDefault((arg) => arg.Name == arrayType.ElementType.Name) != null ) {
 
-          // Must be an array type (C# will automatically fill in the type parameter based on the array).
-          return "cs.system.Array";
-        }
+        //   // Must be an array type (C# will automatically fill in the type parameter based on the array).
+        //   return "cs.system.Array";
+        // }
 
         return "cs.NativeArray" +
           (arrayType.Dimensions.Count > 1 ? arrayType.Dimensions.Count.ToString() : "") +
