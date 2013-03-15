@@ -426,7 +426,7 @@ namespace cslibgen {
 
             } else {
 
-              sw.Write("\t@:skipReflection" + MakeMethodAttributes(getter ?? setter)
+              sw.Write("\t@:skipReflection " + MakeMethodAttributes(getter ?? setter)
                        + "var " + propDef.Name + "(" +
                        (getter != null && getter.IsPublic ? "default" : "never") + "," +
                        (setter != null && setter.IsPublic ? "default" : "never") + ") : " +
@@ -713,13 +713,17 @@ namespace cslibgen {
       if ( useExactType ) {
         switch ( typeRef.FullName ) {
         case "System.String":
+        case "System.Char":
           return "String";
         case "System.Boolean":
           return "Bool";
+        case "System.Single":
         case "System.Double":
           return "Float";
         case "System.Int32":
           return "Int";
+        case "System.UInt64":
+          return "cs.StdTypes.UInt64";
         case "System.UInt32":
           return "UInt";
         case "System.Object":
@@ -732,6 +736,7 @@ namespace cslibgen {
         case "System.Object":
           return "Dynamic";
         case "System.String":
+        case "System.Char":
           return "String";
         case "System.Boolean":
           return "Bool";
@@ -746,6 +751,8 @@ namespace cslibgen {
         case "System.UInt16":
         case "System.UInt32":
           return "UInt";
+        case "System.UInt64":
+          return "cs.StdTypes.UInt64";
         case "System.IntPtr":
           return "cs.Pointer<Int>";
         }
