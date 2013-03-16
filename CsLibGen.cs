@@ -725,6 +725,7 @@ namespace cslibgen {
         case "System.UInt64":
           return "cs.StdTypes.UInt64";
         case "System.UInt32":
+		case "System.Byte":
           return "UInt";
         case "System.Object":
           return "Dynamic";
