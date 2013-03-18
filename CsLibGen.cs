@@ -8,6 +8,8 @@ namespace cslibgen {
   class CsLibGen
   {
     public static string outputDir = "";
+    public static string packageName = "";
+    public static string ignoreCSPackageName = "";
     public static List<string> assemblies = new List<string>();
     public static Dictionary<string, TypeDefinition> allTypes = new Dictionary<string, TypeDefinition>();
     public static List<AssemblyDefinition> assemDefs = new List<AssemblyDefinition>();
@@ -39,7 +41,9 @@ namespace cslibgen {
                           "  Usage: cslibgen -o <outputdir> -i <inputdir> <assembly> [<assembly> ..]\n" +
                           "  Options:\n" +
                           "  -o The output folder into which the bindings will be placed.\n" +
-                          "  -i An input directory from which to load assemblies.\n");
+                          "  -i An input directory from which to load assemblies.\n" +
+                          "  -p The explicit package name [optional]\n" +
+                          "  -n Package name to ignore[optional]\n\n" );
         return 1;
       }
 
@@ -52,7 +56,14 @@ namespace cslibgen {
         } else if ( args[i] == "-i" ) {
           inputDirs.Add(args[i + 1]);
           i += 2;
-        } else {
+        } else if ( args[i] == "-p" ) {
+          packageName = args[i + 1];
+          i += 2;
+        } else if ( args[i] == "-n" ) {
+          ignoreCSPackageName = args[i + 1];
+          i += 2;
+        }
+        else {
           assemblies.Add(args[i]);
           i++;
         }
@@ -150,7 +161,6 @@ namespace cslibgen {
       //
 
       foreach ( var assemDef in assemDefs ) {
-
         // Now create the actual haxe binding file for each public type.
         foreach ( var module in assemDef.Modules ) {
           foreach ( var typeDef in module.Types ) {
@@ -294,7 +304,13 @@ namespace cslibgen {
 
       os = new System.IO.StreamWriter(curFileName);
 
-      os.Write("package " + typeDef.Namespace.ToLower() + ";\n\n");
+      // sometimes there's no package name at all, so we'll just use the original filename.
+      if(packageName == "") {
+        os.Write("package " + typeDef.Namespace.ToLower() + ";\n\n");
+      }
+      else {
+        os.Write("package " + packageName.ToLower() + ";\n\n");
+      }
 
       //      var sortedRefs = curImports.ToList().OrderBy((arg) => arg.Key);
       //
@@ -522,7 +538,7 @@ namespace cslibgen {
         sw.WriteLine("}\n");
 
         if ( requiresStaticClass ) {
-          // We have name conflicts between static and instance methods (allowed in C#, disallowed in Haxe)
+      // We have name conflicts between static and instance methods (allowed in C#, disallowed in Haxe)
           // Create a new class with just the static methods
           sw.Write("\n@:native(\"" + GetNonUniqueFullTypeBaseName(typeDef) + "\")");
           sw.Write(" @:final");
@@ -555,7 +571,8 @@ namespace cslibgen {
         }
 
         for ( int i = 0; i < methList.Count; i++ ) {
-          if ( i < methList.Count - 1 ) {
+        Console.WriteLine("Methods: " + methList[i].Item1 + methList[i].Item2 + methList[i].Item3 + methList[i].Item4);
+      if ( i < methList.Count - 1 ) {
             sw.Write("  @:overload(function" + methList[i].Item3 + " {})\n");
           } else {
             sw.Write("  " + methList[i].Item1 + "function " + methList[i].Item2 + methList[i].Item3 + ";\n");
@@ -730,13 +747,13 @@ namespace cslibgen {
           return "Dynamic";
         case "System.Collections.Generic.Dictionary":
           return "Map";
+        case "System.Collections.Generic.List":
+          return "List";
         case "System.Collections.Hashtable":
           return "Map<String, String>";
         }
       } else {
         switch ( typeRef.FullName ) {
-        case "System.Collections.Generic.Dictionary":
-          return "Map";
         case "System.Void":
           return "Void";
         case "System.Object":
@@ -761,6 +778,10 @@ namespace cslibgen {
           return "cs.StdTypes.UInt64";
         case "System.IntPtr":
           return "cs.Pointer<Int>";
+        case "System.Collections.Generic.Dictionary":
+          return "Map";
+        case "System.Collections.Generic.List":
+          return "List";
         case "System.Collections.Hashtable":
           return "Map<String, String>";
         }
@@ -778,14 +799,24 @@ namespace cslibgen {
       // Make full type name (including generic params).
       var sb = new StringBuilder();
       // FIXME: Hack for native dictionaries
-      if (typeBaseName != "Dictionary") {
-        if ( typeRef.Namespace != null && typeRef.Namespace.Length > 0 && typeRef.Namespace != curNs ) {
-          sb.Append("cs." + typeRef.Namespace.ToLower() + ".");
-        }
-        sb.Append(typeBaseName);
+      if (typeBaseName == "Dictionary") {
+        sb.Append("Map");
+      }
+      else if (typeBaseName == "List") {
+        sb.Append("List");
       }
       else {
-        sb.Append("Map");
+        if ( typeRef.Namespace != null && typeRef.Namespace.Length > 0 && typeRef.Namespace != curNs ) {
+          var namespaceL = typeRef.Namespace.ToLower();
+
+          if(ignoreCSPackageName == namespaceL) {
+            sb.Append(typeRef.Namespace.ToLower() + ".");
+          }
+          else {
+            sb.Append("cs." + typeRef.Namespace.ToLower() + ".");
+          }
+        }
+        sb.Append(typeBaseName);
       }
 
       if ( typeRef.IsGenericInstance ) {
