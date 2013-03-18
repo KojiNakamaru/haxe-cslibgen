@@ -8,6 +8,8 @@ namespace cslibgen {
   class CsLibGen
   {
     public static string outputDir = "";
+    public static bool skipPackagePrefix = false;
+    public static string packageNameOverride = "";
     public static List<string> assemblies = new List<string>();
     public static Dictionary<string, TypeDefinition> allTypes = new Dictionary<string, TypeDefinition>();
     public static List<AssemblyDefinition> assemDefs = new List<AssemblyDefinition>();
@@ -39,7 +41,9 @@ namespace cslibgen {
                           "  Usage: cslibgen -o <outputdir> -i <inputdir> <assembly> [<assembly> ..]\n" +
                           "  Options:\n" +
                           "  -o The output folder into which the bindings will be placed.\n" +
-                          "  -i An input directory from which to load assemblies.\n");
+                          "  -i An input directory from which to load assemblies.\n" +
+                          "  -p Package name override [optional]\n" +
+                          "  -s Skip package prefix\n" );
         return 1;
       }
 
@@ -52,6 +56,12 @@ namespace cslibgen {
         } else if ( args[i] == "-i" ) {
           inputDirs.Add(args[i + 1]);
           i += 2;
+        } else if ( args[i] == "-p" ) {
+          packageNameOverride = args[i + 1];
+          i += 2;
+        } else if ( args[i] == "-s" ) {
+          skipPackagePrefix = true;
+          i++;
         } else {
           assemblies.Add(args[i]);
           i++;
@@ -146,17 +156,22 @@ namespace cslibgen {
       }
 
       //
-      // Output all public types to files.
+      // Output all public types to files assuming we don't want to ignore them.
       //
+      var defsToIgnore = new HashSet<string> {
+        "System.Type", "System.String"
+      };
 
       foreach ( var assemDef in assemDefs ) {
 
         // Now create the actual haxe binding file for each public type.
         foreach ( var module in assemDef.Modules ) {
           foreach ( var typeDef in module.Types ) {
-            if ( typeDef.IsPublic ) { // && typeDef.FullName == "System.TimeZoneInfo") {
-              Console.WriteLine(typeDef.FullName);
-              WriteTopLevelTypeDef(typeDef);
+            if (!defsToIgnore.Contains(typeDef.FullName)) {
+              if ( typeDef.IsPublic) { // && typeDef.FullName == "System.TimeZoneInfo") {
+                Console.WriteLine(typeDef.FullName);
+                WriteTopLevelTypeDef(typeDef);
+              }
             }
           }
         }
@@ -294,7 +309,16 @@ namespace cslibgen {
 
       os = new System.IO.StreamWriter(curFileName);
 
-      os.Write("package dotnet." + typeDef.Namespace.ToLower() + ";\n\n");
+      if (skipPackagePrefix) {
+        os.Write("package " + typeDef.Namespace.ToLower() + ";\n\n");
+      }
+      else if(packageNameOverride != "") {
+        string n = typeDef.Namespace == "" ? packageNameOverride : packageNameOverride + "." + typeDef.Namespace.ToLower();
+        os.Write("package " + n + ";\n\n");
+      }
+      else {
+        os.Write("package dotnet." + typeDef.Namespace.ToLower() + ";\n\n");
+      }
 
       //      var sortedRefs = curImports.ToList().OrderBy((arg) => arg.Key);
       //
@@ -320,9 +344,10 @@ namespace cslibgen {
 
       // Make implements string
       var publicInterfaces = typeDef.Interfaces.Where((arg) => GetTypeDef(arg) != null && GetTypeDef(arg).IsPublic).ToList();
+      var inherits = typeDef.IsInterface ? "extends" : "implements";
       var implementsList = publicInterfaces.Count > 0 ?
-        (!String.IsNullOrEmpty(extends) ? " " : "") + " implements " +
-          String.Join(" implements ", publicInterfaces.Select((arg) => MakeTypeName(arg))) : "";
+        (!String.IsNullOrEmpty(extends) ? " " : "") + " " + inherits + " " +
+          String.Join(" " + inherits + " ", publicInterfaces.Select((arg) => MakeTypeName(arg))) : "";
 
       // Make class/interface declaration
       if ( typeDef.IsEnum ) {
@@ -426,7 +451,7 @@ namespace cslibgen {
 
             } else {
 
-              sw.Write("\t@:skipReflection" + MakeMethodAttributes(getter ?? setter)
+              sw.Write("  @:skipReflection " + MakeMethodAttributes(getter ?? setter)
                        + "var " + propDef.Name + "(" +
                        (getter != null && getter.IsPublic ? "default" : "never") + "," +
                        (setter != null && setter.IsPublic ? "default" : "never") + ") : " +
@@ -477,6 +502,11 @@ namespace cslibgen {
 
         var uniqueStaticMethods = new Dictionary<string, List<Tuple<string, string, string, MethodDefinition>>>();
         var requiresStaticClass = false;
+
+        Dictionary<string, int> instanceMethods = new Dictionary<string, int>();
+
+        GetUniqueInstanceMethodNames(typeDef, instanceMethods);
+
         // Iterate over static methods
         foreach ( var methodDef in typeDef.Methods ) {
           curMethDef = methodDef;
@@ -495,7 +525,7 @@ namespace cslibgen {
               methList = new List<Tuple<string,string,string,MethodDefinition>>();
               uniqueStaticMethods[methodName] = methList;
 
-              if ( uniqueMethods.ContainsKey(methodName) ) {
+              if ( instanceMethods.ContainsKey(methodName) ) {
                 requiresStaticClass = true;
               }
 
@@ -537,13 +567,34 @@ namespace cslibgen {
       }
     }
 
+    static void GetUniqueInstanceMethodNames(TypeDefinition typeDef, Dictionary<string,int> io_methods) {
+      if ( typeDef.BaseType != null && GetTypeDef(typeDef.BaseType) != null) {
+        GetUniqueInstanceMethodNames(GetTypeDef(typeDef.BaseType), io_methods);
+      }
+      var publicInterfaces = typeDef.Interfaces.Where((arg) => GetTypeDef(arg) != null && GetTypeDef(arg).IsPublic).ToList();
+      foreach ( var itfDef in publicInterfaces ) {
+        if ( GetTypeDef(itfDef) != null) {
+          GetUniqueInstanceMethodNames(GetTypeDef(itfDef), io_methods);
+        }
+      }
+
+      foreach ( var methodDef in typeDef.Methods ) {
+        curMethDef = methodDef;
+        var methodName = GetUnadornedMethodName(methodDef);
+        if ( !methodDef.IsStatic && (methodDef.IsPublic || methodDef.IsVirtual) &&
+             !IsHiddenOverride(methodDef) && !methodDef.Name.StartsWith("op_") &&
+             !methodDef.IsGetter && !methodDef.IsSetter && !methodDef.IsRemoveOn && !methodDef.IsAddOn ) {
+          io_methods[methodName] = 1;
+        }
+      }
+    }
+
     public static void writeMethods(Dictionary<string, List<Tuple<string, string, string, MethodDefinition>>> uniqueMethods, System.IO.StringWriter sw) {
       var sortedMethods = uniqueMethods.OrderBy((arg) => arg.Key).ToList();
 
       foreach ( var methodDefPair in sortedMethods ) {
 
         var methList = methodDefPair.Value.OrderByDescending((arg) => arg.Item4.Parameters.Count).ThenByDescending((arg) => arg.Item3).ToList();
-
         sw.WriteLine();
 
         if ( methList.Count > 1 ) {
@@ -554,9 +605,15 @@ namespace cslibgen {
           }
         }
 
+        var methods = new HashSet<string>();
+
         for ( int i = 0; i < methList.Count; i++ ) {
           if ( i < methList.Count - 1 ) {
-            sw.Write("  @:overload(function" + methList[i].Item3 + " {})\n");
+            var line = "  @:overload(function" + methList[i].Item3 + " {})\n";
+            if (!methods.Contains(line)) {
+              methods.Add(line);
+              sw.Write(line);
+            }
           } else {
             sw.Write("  " + methList[i].Item1 + "function " + methList[i].Item2 + methList[i].Item3 + ";\n");
           }
@@ -721,6 +778,8 @@ namespace cslibgen {
           return "Int";
         case "System.UInt32":
           return "UInt";
+        case "System.Type":
+          return "cs.system.Type";
         }
       } else {
         switch ( typeRef.FullName ) {
@@ -743,6 +802,8 @@ namespace cslibgen {
         case "System.UInt16":
         case "System.UInt32":
           return "UInt";
+        case "System.Type":
+          return "cs.system.Type";
         }
       }
 
