@@ -735,6 +735,8 @@ namespace cslibgen {
         }
       } else {
         switch ( typeRef.FullName ) {
+        case "System.Collections.Generic.Dictionary":
+          return "Map";
         case "System.Void":
           return "Void";
         case "System.Object":
@@ -759,14 +761,13 @@ namespace cslibgen {
           return "cs.StdTypes.UInt64";
         case "System.IntPtr":
           return "cs.Pointer<Int>";
-        case "System.Collections.Generic.Dictionary":
-          return "Map";
         case "System.Collections.Hashtable":
           return "Map<String, String>";
         }
       }
 
       var typeBaseName = GetFinalTypeBaseName(typeRef);
+
       //      var fullTypeName = typeRef.Namespace + "." + typeBaseName;
 
       //      // Add this type to the imports list..
@@ -776,10 +777,16 @@ namespace cslibgen {
 
       // Make full type name (including generic params).
       var sb = new StringBuilder();
-      if ( typeRef.Namespace != null && typeRef.Namespace.Length > 0 && typeRef.Namespace != curNs ) {
-        sb.Append("cs." + typeRef.Namespace.ToLower() + ".");
+      // FIXME: Hack for native dictionaries
+      if (typeBaseName != "Dictionary") {
+        if ( typeRef.Namespace != null && typeRef.Namespace.Length > 0 && typeRef.Namespace != curNs ) {
+          sb.Append("cs." + typeRef.Namespace.ToLower() + ".");
+        }
+        sb.Append(typeBaseName);
       }
-      sb.Append(typeBaseName);
+      else {
+        sb.Append("Map");
+      }
 
       if ( typeRef.IsGenericInstance ) {
         var genericInst = typeRef as GenericInstanceType;
