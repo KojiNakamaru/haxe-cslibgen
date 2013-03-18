@@ -8,8 +8,6 @@ namespace cslibgen {
   class CsLibGen
   {
     public static string outputDir = "";
-    public static string packageName = "";
-    public static string ignoreCSPackageName = "";
     public static List<string> assemblies = new List<string>();
     public static Dictionary<string, TypeDefinition> allTypes = new Dictionary<string, TypeDefinition>();
     public static List<AssemblyDefinition> assemDefs = new List<AssemblyDefinition>();
@@ -41,9 +39,7 @@ namespace cslibgen {
                           "  Usage: cslibgen -o <outputdir> -i <inputdir> <assembly> [<assembly> ..]\n" +
                           "  Options:\n" +
                           "  -o The output folder into which the bindings will be placed.\n" +
-                          "  -i An input directory from which to load assemblies.\n" +
-                          "  -p The explicit package name [optional]\n" +
-                          "  -n Package name to ignore[optional]\n\n" );
+                          "  -i An input directory from which to load assemblies.\n");
         return 1;
       }
 
@@ -56,14 +52,7 @@ namespace cslibgen {
         } else if ( args[i] == "-i" ) {
           inputDirs.Add(args[i + 1]);
           i += 2;
-        } else if ( args[i] == "-p" ) {
-          packageName = args[i + 1];
-          i += 2;
-        } else if ( args[i] == "-n" ) {
-          ignoreCSPackageName = args[i + 1];
-          i += 2;
-        }
-        else {
+        } else {
           assemblies.Add(args[i]);
           i++;
         }
@@ -161,6 +150,7 @@ namespace cslibgen {
       //
 
       foreach ( var assemDef in assemDefs ) {
+
         // Now create the actual haxe binding file for each public type.
         foreach ( var module in assemDef.Modules ) {
           foreach ( var typeDef in module.Types ) {
@@ -304,13 +294,7 @@ namespace cslibgen {
 
       os = new System.IO.StreamWriter(curFileName);
 
-      // sometimes there's no package name at all, so we'll just use the original filename.
-      if(packageName == "") {
-        os.Write("package " + typeDef.Namespace.ToLower() + ";\n\n");
-      }
-      else {
-        os.Write("package " + packageName.ToLower() + ";\n\n");
-      }
+      os.Write("package dotnet." + typeDef.Namespace.ToLower() + ";\n\n");
 
       //      var sortedRefs = curImports.ToList().OrderBy((arg) => arg.Key);
       //
@@ -337,8 +321,8 @@ namespace cslibgen {
       // Make implements string
       var publicInterfaces = typeDef.Interfaces.Where((arg) => GetTypeDef(arg) != null && GetTypeDef(arg).IsPublic).ToList();
       var implementsList = publicInterfaces.Count > 0 ?
-        (!String.IsNullOrEmpty(extends) ? "," : "") + " implements " +
-          String.Join(", implements ", publicInterfaces.Select((arg) => MakeTypeName(arg))) : "";
+        (!String.IsNullOrEmpty(extends) ? " " : "") + " implements " +
+          String.Join(" implements ", publicInterfaces.Select((arg) => MakeTypeName(arg))) : "";
 
       // Make class/interface declaration
       if ( typeDef.IsEnum ) {
@@ -353,7 +337,7 @@ namespace cslibgen {
 
         foreach ( var fieldDef in typeDef.Fields ) {
           if ( fieldDef.IsStatic && fieldDef.Name != "__value" ) {
-            sw.Write("" + fieldDef.Name + ";\n");
+            sw.Write("  " + fieldDef.Name + ";\n");
           }
         }
 
@@ -399,7 +383,7 @@ namespace cslibgen {
             if ( eventDef.AddMethod.IsPublic ) {
 
               sw.Write("  public " + (eventDef.AddMethod.IsStatic ? "static " : "") +
-                       "var " + eventDef.Name + "(default,null) : cs.system.NativeEvent<" + MakeTypeName(eventArgType) + ">;\n");
+                       "var " + eventDef.Name + "(default,null) : dotnet.system.NativeEvent<" + MakeTypeName(eventArgType) + ">;\n");
             }
           }
 
@@ -442,12 +426,11 @@ namespace cslibgen {
 
             } else {
 
-              sw.Write("  @:skipReflection " + MakeMethodAttributes(getter ?? setter)
+              sw.Write("\t@:skipReflection" + MakeMethodAttributes(getter ?? setter)
                        + "var " + propDef.Name + "(" +
                        (getter != null && getter.IsPublic ? "default" : "never") + "," +
                        (setter != null && setter.IsPublic ? "default" : "never") + ") : " +
                        MakeTypeName(propDef.PropertyType) + ";\n");
-
             }
           }
 
@@ -483,6 +466,7 @@ namespace cslibgen {
               methodDecl = "(" + MakeMethodParams(methodDef) + ") : Void";
 
             } else {
+
               methodDecl = "(" + MakeMethodParams(methodDef) + ") : " +
                 MakeTypeName(methodDef.ReturnType);
             }
@@ -538,7 +522,7 @@ namespace cslibgen {
         sw.WriteLine("}\n");
 
         if ( requiresStaticClass ) {
-      // We have name conflicts between static and instance methods (allowed in C#, disallowed in Haxe)
+          // We have name conflicts between static and instance methods (allowed in C#, disallowed in Haxe)
           // Create a new class with just the static methods
           sw.Write("\n@:native(\"" + GetNonUniqueFullTypeBaseName(typeDef) + "\")");
           sw.Write(" @:final");
@@ -571,8 +555,7 @@ namespace cslibgen {
         }
 
         for ( int i = 0; i < methList.Count; i++ ) {
-        Console.WriteLine("Methods: " + methList[i].Item1 + methList[i].Item2 + methList[i].Item3 + methList[i].Item4);
-      if ( i < methList.Count - 1 ) {
+          if ( i < methList.Count - 1 ) {
             sw.Write("  @:overload(function" + methList[i].Item3 + " {})\n");
           } else {
             sw.Write("  " + methList[i].Item1 + "function " + methList[i].Item2 + methList[i].Item3 + ";\n");
@@ -713,13 +696,13 @@ namespace cslibgen {
       if ( typeRef is ArrayType ) {
         var arrayType = typeRef as ArrayType;
 
-        // // Handle generic methods with arrays with type parameters..
-        // if ( curMethDef != null && curMethDef.HasGenericParameters && arrayType.ElementType.IsGenericParameter &&
-        //   curMethDef.GenericParameters.FirstOrDefault((arg) => arg.Name == arrayType.ElementType.Name) != null ) {
+        // Handle generic methods with arrays with type parameters..
+        if ( curMethDef != null && curMethDef.HasGenericParameters && arrayType.ElementType.IsGenericParameter &&
+          curMethDef.GenericParameters.FirstOrDefault((arg) => arg.Name == arrayType.ElementType.Name) != null ) {
 
-        //   // Must be an array type (C# will automatically fill in the type parameter based on the array).
-        //   return "cs.system.Array";
-        // }
+          // Must be an array type (C# will automatically fill in the type parameter based on the array).
+          return "dotnet.system.Array";
+        }
 
         return "cs.NativeArray" +
           (arrayType.Dimensions.Count > 1 ? arrayType.Dimensions.Count.ToString() : "") +
@@ -729,28 +712,15 @@ namespace cslibgen {
       if ( useExactType ) {
         switch ( typeRef.FullName ) {
         case "System.String":
-        case "System.Char":
           return "String";
         case "System.Boolean":
           return "Bool";
-        case "System.Single":
         case "System.Double":
           return "Float";
         case "System.Int32":
           return "Int";
-        case "System.UInt64":
-          return "cs.StdTypes.UInt64";
         case "System.UInt32":
-        case "System.Byte":
           return "UInt";
-        case "System.Object":
-          return "Dynamic";
-        case "System.Collections.Generic.Dictionary":
-          return "Map";
-        case "System.Collections.Generic.List":
-          return "List";
-        case "System.Collections.Hashtable":
-          return "Map<String, String>";
         }
       } else {
         switch ( typeRef.FullName ) {
@@ -759,7 +729,6 @@ namespace cslibgen {
         case "System.Object":
           return "Dynamic";
         case "System.String":
-        case "System.Char":
           return "String";
         case "System.Boolean":
           return "Bool";
@@ -774,21 +743,10 @@ namespace cslibgen {
         case "System.UInt16":
         case "System.UInt32":
           return "UInt";
-        case "System.UInt64":
-          return "cs.StdTypes.UInt64";
-        case "System.IntPtr":
-          return "cs.Pointer<Int>";
-        case "System.Collections.Generic.Dictionary":
-          return "Map";
-        case "System.Collections.Generic.List":
-          return "List";
-        case "System.Collections.Hashtable":
-          return "Map<String, String>";
         }
       }
 
       var typeBaseName = GetFinalTypeBaseName(typeRef);
-
       //      var fullTypeName = typeRef.Namespace + "." + typeBaseName;
 
       //      // Add this type to the imports list..
@@ -798,26 +756,10 @@ namespace cslibgen {
 
       // Make full type name (including generic params).
       var sb = new StringBuilder();
-      // FIXME: Hack for native dictionaries
-      if (typeBaseName == "Dictionary") {
-        sb.Append("Map");
+      if ( typeRef.Namespace != null && typeRef.Namespace.Length > 0 && typeRef.Namespace != curNs ) {
+        sb.Append("dotnet." + typeRef.Namespace.ToLower() + ".");
       }
-      else if (typeBaseName == "List") {
-        sb.Append("List");
-      }
-      else {
-        if ( typeRef.Namespace != null && typeRef.Namespace.Length > 0 && typeRef.Namespace != curNs ) {
-          var namespaceL = typeRef.Namespace.ToLower();
-
-          if(ignoreCSPackageName == namespaceL) {
-            sb.Append(typeRef.Namespace.ToLower() + ".");
-          }
-          else {
-            sb.Append("cs." + typeRef.Namespace.ToLower() + ".");
-          }
-        }
-        sb.Append(typeBaseName);
-      }
+      sb.Append(typeBaseName);
 
       if ( typeRef.IsGenericInstance ) {
         var genericInst = typeRef as GenericInstanceType;
@@ -828,16 +770,17 @@ namespace cslibgen {
             sb.Append(",");
           }
           if ( genericType.IsGenericParameter ) {
+
             // If we're a method with generic parameters, we have to figure out how to make a parameter Haxe will allow.
             if ( curMethDef != null ) {
               if ( curMethDef.HasGenericParameters &&
                   curMethDef.GenericParameters.FirstOrDefault((arg) => arg.Name == genericType.Name) != null ) {
                 if ( typeRef.Namespace == "System.Collections.Generic" && typeBaseName == "IEnumerable" ) {
-                  return "cs.system.collections.IEnumerable"; // Anything that implements IEnumerable<T> always implements IEnumerable.
+                  return "dotnet.system.collections.IEnumerable"; // Anything that implements IEnumerable<T> always implements IEnumerable.
                 } else if ( typeRef.Namespace == "System.Collections.Generic" && typeBaseName == "IComparer" ) {
-                  return "cs.system.collections.IComparer"; // Anything that implements IEnumerable<T> always implements IEnumerable.
+                  return "dotnet.system.collections.IComparer"; // Anything that implements IEnumerable<T> always implements IEnumerable.
                 } else if ( typeRef.Namespace == "System" && typeBaseName == "IComparable" ) {
-                  return "cs.system.IComparable"; // Anything that implements IComparable<T> always implements IComparable.
+                  return "dotnet.system.IComparable"; // Anything that implements IComparable<T> always implements IComparable.
                 } else {
                   // We'll just have to punt generic method's generic parameters to "Dynamic" if we can't use a non
                   // parameterized type above.
