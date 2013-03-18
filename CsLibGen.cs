@@ -467,7 +467,6 @@ namespace cslibgen {
               methodDecl = "(" + MakeMethodParams(methodDef) + ") : Void";
 
             } else {
-
               methodDecl = "(" + MakeMethodParams(methodDef) + ") : " +
                 MakeTypeName(methodDef.ReturnType);
             }
@@ -725,10 +724,14 @@ namespace cslibgen {
         case "System.UInt64":
           return "cs.StdTypes.UInt64";
         case "System.UInt32":
-		case "System.Byte":
+        case "System.Byte":
           return "UInt";
         case "System.Object":
           return "Dynamic";
+        case "System.Collections.Generic.Dictionary":
+          return "Map";
+        case "System.Collections.Hashtable":
+          return "Map<String, String>";
         }
       } else {
         switch ( typeRef.FullName ) {
@@ -756,6 +759,10 @@ namespace cslibgen {
           return "cs.StdTypes.UInt64";
         case "System.IntPtr":
           return "cs.Pointer<Int>";
+        case "System.Collections.Generic.Dictionary":
+          return "Map";
+        case "System.Collections.Hashtable":
+          return "Map<String, String>";
         }
       }
 
@@ -783,7 +790,6 @@ namespace cslibgen {
             sb.Append(",");
           }
           if ( genericType.IsGenericParameter ) {
-
             // If we're a method with generic parameters, we have to figure out how to make a parameter Haxe will allow.
             if ( curMethDef != null ) {
               if ( curMethDef.HasGenericParameters &&
