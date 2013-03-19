@@ -524,17 +524,17 @@ namespace cslibgen {
             if ( !uniqueStaticMethods.TryGetValue(methodName, out methList) ) {
               methList = new List<Tuple<string,string,string,MethodDefinition>>();
               uniqueStaticMethods[methodName] = methList;
-
-              if ( instanceMethods.ContainsKey(methodName) ) {
-                requiresStaticClass = true;
-              }
-
-              string methodAttrs = MakeMethodAttributes(methodDef);
-              string methodDecl = "(" + MakeMethodParams(methodDef) + ") : " +
-                  MakeTypeName(methodDef.ReturnType);
-
-              methList.Add(new Tuple<string,string,string,MethodDefinition>(methodAttrs, methodName, methodDecl, methodDef));
             }
+
+            if ( instanceMethods.ContainsKey(methodName) ) {
+              requiresStaticClass = true;
+            }
+
+            string methodAttrs = MakeMethodAttributes(methodDef);
+            string methodDecl = "(" + MakeMethodParams(methodDef) + ") : " +
+              MakeTypeName(methodDef.ReturnType);
+
+            methList.Add(new Tuple<string,string,string,MethodDefinition>(methodAttrs, methodName, methodDecl, methodDef));
           }
         }
 
@@ -780,6 +780,11 @@ namespace cslibgen {
           return "UInt";
         case "System.Type":
           return "cs.system.Type";
+
+        case "UIDrawCall/Clipping":
+          return "UIDrawCall.UIDrawCall_Clipping";
+        case "UIAtlas/Sprite":
+          return "UIAtlas.UIAtlas_Sprite";
         }
       } else {
         switch ( typeRef.FullName ) {
@@ -804,6 +809,11 @@ namespace cslibgen {
           return "UInt";
         case "System.Type":
           return "cs.system.Type";
+
+        case "UIDrawCall/Clipping":
+          return "UIDrawCall.UIDrawCall_Clipping";
+        case "UIAtlas/Sprite":
+          return "UIAtlas.UIAtlas_Sprite";
         }
       }
 
@@ -815,10 +825,20 @@ namespace cslibgen {
       //        curImports[fullTypeName] = typeRef;
       //      }
 
+      // don't preface these packages
+      var rootPackages = new HashSet<String> {
+        "UnityEngine"
+      };
+
       // Make full type name (including generic params).
       var sb = new StringBuilder();
       if ( typeRef.Namespace != null && typeRef.Namespace.Length > 0 && typeRef.Namespace != curNs ) {
-        sb.Append("dotnet." + typeRef.Namespace.ToLower() + ".");
+        if(rootPackages.Contains(typeRef.Namespace)) {
+          sb.Append(typeRef.Namespace.ToLower() + ".");
+        }
+        else {
+          sb.Append("dotnet." + typeRef.Namespace.ToLower() + ".");
+        }
       }
       sb.Append(typeBaseName);
 
