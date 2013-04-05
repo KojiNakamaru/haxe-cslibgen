@@ -451,7 +451,7 @@ namespace cslibgen {
 
             } else {
 
-              sw.Write("  @:skipReflection " + MakeMethodAttributes(getter ?? setter)
+              sw.Write("  " + MakeMethodAttributes(getter ?? setter)
                        + "var " + propDef.Name + "(" +
                        (getter != null && getter.IsPublic ? "default" : "never") + "," +
                        (setter != null && setter.IsPublic ? "default" : "never") + ") : " +
