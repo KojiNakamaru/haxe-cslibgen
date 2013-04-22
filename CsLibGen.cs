@@ -4,7 +4,10 @@ using System.Linq;
 using Mono.Cecil;
 using System.Collections.Generic;
 
+
 namespace cslibgen {
+  using GenMethod = Tuple<string,string,string,MethodDefinition,bool>;
+
   class CsLibGen
   {
     public static string outputDir = "";
@@ -338,9 +341,8 @@ namespace cslibgen {
       curFullTypeName = GetFullFinalTypeName(typeDef);
 
       // Make extends string
-      var baseTypeDef = typeDef.BaseType != null ? GetTypeDef(typeDef.BaseType) : null;
-      var extends = baseTypeDef != null ?
-        " extends " + MakeTypeName(baseTypeDef, true) : "";
+      var extends = typeDef.BaseType != null ?
+        " extends " + MakeTypeName(typeDef.BaseType, true) : "";
 
       // Make implements string
       var publicInterfaces = typeDef.Interfaces.Where((arg) => GetTypeDef(arg) != null && GetTypeDef(arg).IsPublic).ToList();
@@ -417,48 +419,52 @@ namespace cslibgen {
         //
         // Write Field Definitions
         //
+        if ( !typeDef.IsInterface ) {
+          foreach ( var fieldDef in typeDef.Fields ) {
 
-        foreach ( var fieldDef in typeDef.Fields ) {
+            if ( fieldDef.IsPublic ) {
+              sw.Write("  public " + (fieldDef.IsStatic ? "static " : "") +
+                       "var " + fieldDef.Name + " : " +
+                       MakeTypeName(fieldDef.FieldType) + ";\n");
+            }
 
-          if ( fieldDef.IsPublic ) {
-
-            sw.Write("  public " + (fieldDef.IsStatic ? "static " : "") +
-                     "var " + fieldDef.Name + " : " +
-                     MakeTypeName(fieldDef.FieldType) + ";\n");
           }
-
         }
-
+                
         //
         // Write Property Definitions
         //
+        if ( !typeDef.IsInterface ) {
+          foreach ( var propDef in typeDef.Properties ) {
 
-        foreach ( var propDef in typeDef.Properties ) {
-
-          var getter = propDef.GetMethod;
-          var setter = propDef.SetMethod;
-
-          if ( ((getter != null && getter.IsPublic && !IsHiddenOverride(getter)) ||
-                (setter != null && setter.IsPublic && !IsHiddenOverride(setter))) &&
-              !propDef.HasParameters ) {
-
-            if ( getter != null && getter.IsPublic &&
-                setter != null && setter.IsPublic ) {
-
-              sw.Write("  " + MakeMethodAttributes(getter ?? setter)
-                       + "var " + propDef.Name + " : " +
-                       MakeTypeName(propDef.PropertyType) + ";\n");
-
-            } else {
-
-              sw.Write("  " + MakeMethodAttributes(getter ?? setter)
-                       + "var " + propDef.Name + "(" +
-                       (getter != null && getter.IsPublic ? "default" : "never") + "," +
-                       (setter != null && setter.IsPublic ? "default" : "never") + ") : " +
-                       MakeTypeName(propDef.PropertyType) + ";\n");
+            var getter = propDef.GetMethod;
+            var setter = propDef.SetMethod;
+            if ( (getter == null || MethodDeclaredInBase(getter, false)) &&
+                 (setter == null || MethodDeclaredInBase(setter, false) ) ) {
+              continue;
             }
-          }
 
+            if ( ((getter != null && getter.IsPublic && !IsHiddenOverride(getter)) ||
+                  (setter != null && setter.IsPublic && !IsHiddenOverride(setter))) &&
+                !propDef.HasParameters ) {
+
+              if ( getter != null && getter.IsPublic &&
+                  setter != null && setter.IsPublic ) {
+
+                sw.Write("  " + MakeMethodAttributes(getter ?? setter)
+                         + "var " + propDef.Name + " : " +
+                         MakeTypeName(propDef.PropertyType) + ";\n");
+
+              } else {
+                sw.Write("  " + MakeMethodAttributes(getter ?? setter)
+                         + "var " + propDef.Name + "(" +
+                         (getter != null && getter.IsPublic ? "default" : "never") + "," +
+                         (setter != null && setter.IsPublic ? "default" : "never") + ") : " +
+                         MakeTypeName(propDef.PropertyType) + ";\n");
+              }
+            }
+
+          }
         }
 
         //
@@ -467,23 +473,28 @@ namespace cslibgen {
 
         // First collect and sort instance methods by unique name..
 
-        var uniqueMethods = new Dictionary<string, List<Tuple<string, string, string, MethodDefinition>>>();
+        var uniqueMethods = new Dictionary<string, List<GenMethod>>();
 
         foreach ( var methodDef in typeDef.Methods ) {
           curMethDef = methodDef;
           var methodName = GetUnadornedMethodName(methodDef);
-          if ( !methodDef.IsStatic && (methodDef.IsPublic || methodDef.IsVirtual) &&
+          var appearsInItf = methodDef.DeclaringType.Interfaces.Any((itf) => {
+            return MethodDeclaredInInterface(itf.Resolve(), methodDef);
+          });
+
+          if ( !methodDef.IsStatic && (methodDef.IsPublic || appearsInItf) &&
               !IsHiddenOverride(methodDef) && !methodDef.Name.StartsWith("op_") &&
+              !methodName.StartsWith("get_") && !methodName.StartsWith("set_") &&
               !methodDef.IsGetter && !methodDef.IsSetter && !methodDef.IsRemoveOn && !methodDef.IsAddOn ) {
 
-            List<Tuple<string,string,string,MethodDefinition>> methList;
+            List<GenMethod> methList;
             if ( !uniqueMethods.TryGetValue(methodName, out methList) ) {
-              methList = new List<Tuple<string,string,string,MethodDefinition>>();
+              methList = new List<GenMethod>();
               uniqueMethods[methodName] = methList;
             }
 
-            string methodAttrs = MakeMethodAttributes(methodDef);
             string methodDecl;
+            bool forceOverride = false;
 
             if ( methodDef.IsConstructor ) {
 
@@ -494,13 +505,21 @@ namespace cslibgen {
 
               methodDecl = "(" + MakeMethodParams(methodDef) + ") : " +
                 MakeTypeName(methodDef.ReturnType);
-            }
 
-            methList.Add(new Tuple<string,string,string,MethodDefinition>(methodAttrs, methodName, methodDecl, methodDef));
+              // If we're introducing a new override, include the previous override.
+              if ( !MethodDeclaredInBase(methodDef, true, false) && MethodDeclaredInBase(methodDef, false, false) ) {
+                var baseMethodDef = GetMethodDefInBase(methodDef);
+                var baseMethodDecl = "(" + MakeMethodParams(baseMethodDef) + ") : " +
+                  MakeTypeName(baseMethodDef.ReturnType);
+                forceOverride = true;
+                methList.Add(new GenMethod(MakeMethodAttributes(methodDef, true),methodName,baseMethodDecl,baseMethodDef,true));
+              }
+            }
+            methList.Add(new GenMethod(MakeMethodAttributes(methodDef, forceOverride), methodName, methodDecl, methodDef,false));
           }
         }
 
-        var uniqueStaticMethods = new Dictionary<string, List<Tuple<string, string, string, MethodDefinition>>>();
+        var uniqueStaticMethods = new Dictionary<string, List<GenMethod>>();
         var requiresStaticClass = false;
 
         Dictionary<string, int> instanceMethods = new Dictionary<string, int>();
@@ -520,9 +539,9 @@ namespace cslibgen {
               methodName += GetGenericParameters(typeDef);
             }
 
-            List<Tuple<string,string,string,MethodDefinition>> methList;
+            List<GenMethod> methList;
             if ( !uniqueStaticMethods.TryGetValue(methodName, out methList) ) {
-              methList = new List<Tuple<string,string,string,MethodDefinition>>();
+              methList = new List<GenMethod>();
               uniqueStaticMethods[methodName] = methList;
             }
 
@@ -534,7 +553,7 @@ namespace cslibgen {
             string methodDecl = "(" + MakeMethodParams(methodDef) + ") : " +
               MakeTypeName(methodDef.ReturnType);
 
-            methList.Add(new Tuple<string,string,string,MethodDefinition>(methodAttrs, methodName, methodDecl, methodDef));
+            methList.Add(new GenMethod(methodAttrs, methodName, methodDecl, methodDef, false));
           }
         }
 
@@ -581,29 +600,31 @@ namespace cslibgen {
       foreach ( var methodDef in typeDef.Methods ) {
         curMethDef = methodDef;
         var methodName = GetUnadornedMethodName(methodDef);
-        if ( !methodDef.IsStatic && (methodDef.IsPublic || methodDef.IsVirtual) &&
+        if ( !methodDef.IsStatic && methodDef.IsPublic &&
              !IsHiddenOverride(methodDef) && !methodDef.Name.StartsWith("op_") &&
-             !methodDef.IsGetter && !methodDef.IsSetter && !methodDef.IsRemoveOn && !methodDef.IsAddOn ) {
+            !methodDef.IsGetter && !methodDef.IsSetter && !methodDef.IsRemoveOn && !methodDef.IsAddOn ) {
           io_methods[methodName] = 1;
         }
       }
     }
 
-    public static void writeMethods(Dictionary<string, List<Tuple<string, string, string, MethodDefinition>>> uniqueMethods, System.IO.StringWriter sw) {
+    public static void writeMethods(Dictionary<string, List<GenMethod>> uniqueMethods, System.IO.StringWriter sw) {
       var sortedMethods = uniqueMethods.OrderBy((arg) => arg.Key).ToList();
 
       foreach ( var methodDefPair in sortedMethods ) {
 
-        var methList = methodDefPair.Value.OrderByDescending((arg) => arg.Item4.Parameters.Count).ThenByDescending((arg) => arg.Item3).ToList();
+        var methList = methodDefPair.Value.OrderBy((arg) => arg.Item5 ? 1 : 0).ToList();
         sw.WriteLine();
 
+        /*
         if ( methList.Count > 1 ) {
           for ( int i = 0; i < methList.Count; ++i ) {
-            if ( !methList[i].Item4.IsPublic ) {
+            if ( !methList[i].Item4.IsPublic && !MethodDeclaredInBase(methList[i].Item4, false, false) ) {
               methList.RemoveAt(i); --i;
             }
           }
         }
+        */
 
         var methods = new HashSet<string>();
 
@@ -631,16 +652,17 @@ namespace cslibgen {
       }
       return null;
     }
-
-    public static bool IsHiddenOverride(MethodDefinition methodDef) {
-      if (methodDef.IsConstructor) return false;
-	    if ( MethodDeclaredInBase(methodDef, true) ) {
+        
+    public static bool IsHiddenOverride (MethodDefinition methodDef) {
+      if (methodDef.IsConstructor)
+        return false;
+      if (MethodDeclaredInBase(methodDef, true)) {
         var appearsInItf = methodDef.DeclaringType.Interfaces.Any((itf) => {
           return MethodDeclaredInInterface(itf.Resolve(), methodDef);
         });
-		    return !appearsInItf;
-	    }
-	    return false;
+        return !appearsInItf;
+      }
+      return false;
     }
 
     public static bool MethodDeclaredInInterface(TypeDefinition itf, MethodDefinition methodDef) {
@@ -660,7 +682,23 @@ namespace cslibgen {
       return false;
     }
 
-    public static bool MethodDeclaredInBase(MethodDefinition methodDef, Boolean exactArgs=true) {
+    public static MethodDefinition GetMethodDefInBase (MethodDefinition methodDef) { 
+      var type = methodDef.DeclaringType;
+      var curBase = type.BaseType;
+      var methodName = GetUnadornedMethodName(methodDef);
+      while ( curBase != null ) {
+        var resolved = curBase.Resolve();
+        foreach ( var baseMethod in resolved.Methods ) {
+          if ( GetUnadornedMethodName(baseMethod) == methodName ) {
+            return baseMethod;
+          }
+        }
+        curBase = resolved.BaseType;
+      }
+      return null;
+    }
+
+    public static bool MethodDeclaredInBase(MethodDefinition methodDef, bool exactArgs=true, bool exactAccess=true) {
       var type = methodDef.DeclaringType;
       var curBase = type.BaseType;
       var methodName = GetUnadornedMethodName(methodDef);
@@ -668,15 +706,19 @@ namespace cslibgen {
         var resolved = curBase.Resolve();
         foreach ( var baseMethod in resolved.Methods ) {
           if ( (!exactArgs || baseMethod.Parameters.Equals(methodDef.Parameters)) && 
-			   GetUnadornedMethodName(baseMethod) == methodName ) {
-            return true;
+              GetUnadornedMethodName(baseMethod) == methodName &&
+              (!exactAccess || baseMethod.IsPublic == methodDef.IsPublic) ) {
+            var appearsInItf = baseMethod.DeclaringType.Interfaces.Any((itf) => {
+              return MethodDeclaredInInterface(itf.Resolve(), baseMethod);
+            });
+            return baseMethod.IsPublic || appearsInItf;
           }
         }
         curBase = resolved.BaseType;
       }
       return false;
     }
-
+        
     public static void ResetUsedTypeNames() {
       curUsedTypeNames = new HashSet<string>();
       string[] names = {
@@ -713,7 +755,7 @@ namespace cslibgen {
       }
     }
 
-    public static string MakeMethodAttributes(MethodDefinition methodDef) {
+    public static string MakeMethodAttributes(MethodDefinition methodDef, bool forceOverride=false) {
       var sb = new StringBuilder();
       if ( methodDef.IsPublic && !methodDef.DeclaringType.IsInterface ) {
         sb.Append("public ");
@@ -721,7 +763,9 @@ namespace cslibgen {
       if ( methodDef.IsStatic ) {
         sb.Append("static ");
       }
-      if ( !methodDef.IsConstructor && methodDef.IsVirtual && MethodDeclaredInBase(methodDef, false) ) {
+      if ( forceOverride || 
+          ( !methodDef.IsConstructor && !methodDef.IsStatic && !methodDef.IsGetter && !methodDef.IsSetter && 
+             methodDef.DeclaringType.BaseType != null && MethodDeclaredInBase(methodDef, false) ) ) {
         sb.Append("override ");
       }
       return sb.ToString();
