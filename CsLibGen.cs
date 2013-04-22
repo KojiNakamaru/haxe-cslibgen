@@ -809,6 +809,8 @@ namespace cslibgen {
           return "String";
         case "System.Boolean":
           return "Bool";
+        case "System.Single":
+          return "Single";
         case "System.Double":
           return "Float";
         case "System.Int32":
@@ -834,6 +836,7 @@ namespace cslibgen {
         case "System.Boolean":
           return "Bool";
         case "System.Single":
+          return "Single";
         case "System.Double":
           return "Float";
         case "System.SByte":
