@@ -634,21 +634,13 @@ namespace cslibgen {
 
     public static bool IsHiddenOverride(MethodDefinition methodDef) {
       if (methodDef.IsConstructor) return false;
-
-      var appearsInBase = MethodDeclaredInBase(methodDef);
-      if ( appearsInBase ) return true; // FIXME: need to handle functions that share a name with a base-class function, but have different arguments.
-
-      if ( methodDef.IsVirtual ) {
+	    if ( MethodDeclaredInBase(methodDef, true) ) {
         var appearsInItf = methodDef.DeclaringType.Interfaces.Any((itf) => {
           return MethodDeclaredInInterface(itf.Resolve(), methodDef);
         });
-        if ( appearsInBase ) {
-          return true;
-        }
-        return !appearsInItf;
-      } else {
-        return false;
-      }
+		    return !appearsInItf;
+	    }
+	    return false;
     }
 
     public static bool MethodDeclaredInInterface(TypeDefinition itf, MethodDefinition methodDef) {
@@ -668,14 +660,15 @@ namespace cslibgen {
       return false;
     }
 
-    public static bool MethodDeclaredInBase(MethodDefinition methodDef) {
+    public static bool MethodDeclaredInBase(MethodDefinition methodDef, Boolean exactArgs=true) {
       var type = methodDef.DeclaringType;
       var curBase = type.BaseType;
       var methodName = GetUnadornedMethodName(methodDef);
       while ( curBase != null ) {
         var resolved = curBase.Resolve();
         foreach ( var baseMethod in resolved.Methods ) {
-          if ( GetUnadornedMethodName(baseMethod) == methodName ) {
+          if ( (!exactArgs || baseMethod.Parameters.Equals(methodDef.Parameters)) && 
+			   GetUnadornedMethodName(baseMethod) == methodName ) {
             return true;
           }
         }
@@ -728,7 +721,7 @@ namespace cslibgen {
       if ( methodDef.IsStatic ) {
         sb.Append("static ");
       }
-      if ( methodDef.IsVirtual && MethodDeclaredInBase(methodDef) ) {
+      if ( !methodDef.IsConstructor && methodDef.IsVirtual && MethodDeclaredInBase(methodDef, false) ) {
         sb.Append("override ");
       }
       return sb.ToString();
