@@ -344,8 +344,8 @@ namespace cslibgen {
       var extends = typeDef.BaseType != null ?
         " extends " + MakeTypeName(typeDef.BaseType, true) : "";
 
-      // Make implements string
-      var publicInterfaces = typeDef.Interfaces.Where((arg) => GetTypeDef(arg) != null && GetTypeDef(arg).IsPublic).ToList();
+      // Make implements stringt
+      var publicInterfaces = typeDef.Interfaces.Where((arg) => GetTypeDef(arg) == null || GetTypeDef(arg).IsPublic).ToList();
       var inherits = typeDef.IsInterface ? "extends" : "implements";
       var implementsList = publicInterfaces.Count > 0 ?
         (!String.IsNullOrEmpty(extends) ? " " : "") + " " + inherits + " " +
@@ -843,7 +843,6 @@ namespace cslibgen {
         case "System.Int16":
         case "System.Int32":
           return "Int";
-        case "System.Byte":
         case "System.UInt16":
         case "System.UInt32":
           return "UInt";
