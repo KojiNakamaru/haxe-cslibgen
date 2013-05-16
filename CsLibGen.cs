@@ -104,6 +104,11 @@ namespace cslibgen {
 
       typesByBaseName = new Dictionary<string, List<TypeDefinition>>();
 
+      // 
+      // Add input dirs to assembly serach definition
+      //
+
+
       //
       // Find and load all assemblies..
       //
@@ -141,9 +146,14 @@ namespace cslibgen {
       //
 
       foreach ( var assemDef in assemDefs ) {
+        var mainModule = assemDef.MainModule;
+        // Tell the type resolveer to look in all specified include folders for external references
+        foreach ( var inputDir in inputDirs ) {
+          ((BaseAssemblyResolver)mainModule.AssemblyResolver).AddSearchDirectory(inputDir);
+        }
         // Compile a list of all non unique type base names (i.e. Tuple<>, Tuple<,>, Tuple<,,>).
         // We use this list to convert these type names using a number suffix later.
-        foreach ( var typeDef in assemDef.MainModule.Types ) {
+        foreach ( var typeDef in mainModule.Types ) {
           allTypes[typeDef.FullName] = typeDef;
           if ( typeDef.IsPublic ) {
             List<TypeDefinition> typeList;
