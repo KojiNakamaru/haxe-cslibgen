@@ -22,6 +22,7 @@ namespace cslibgen {
     public static HashSet<string> curUsedTypeNames;
     public static MethodDefinition curMethDef;
     public static string curTypeName;
+    public static TypeReference curType;
     public static string curFullTypeName;
     public static string curNs;
     public static string curNsPath;
@@ -155,6 +156,9 @@ namespace cslibgen {
         // We use this list to convert these type names using a number suffix later.
         foreach ( var typeDef in mainModule.Types ) {
           allTypes[typeDef.FullName] = typeDef;
+          foreach ( var nestedType in typeDef.NestedTypes ) {
+            allTypes[nestedType.FullName] = nestedType;
+          }
           if ( typeDef.IsPublic ) {
             List<TypeDefinition> typeList;
             var nuBaseName = GetNonUniqueFullTypeBaseName(typeDef);
@@ -193,9 +197,23 @@ namespace cslibgen {
       return 0;
     }
 
-    public static TypeDefinition GetTypeDef(TypeReference typeRef) {
+    public static String GetTypeLookupName (TypeReference typeRef) {
+      var name = new StringBuilder();
+      if (typeRef.DeclaringType != null) {
+        name.Append(GetTypeLookupName(typeRef.DeclaringType));
+        name.Append("/");
+      } else if ( typeRef.Namespace != null && typeRef.Namespace.Length > 0 ) {
+        name.Append(typeRef.Namespace);
+        name.Append(".");
+      }
+      name.Append(typeRef.Name);
+      return name.ToString();
+    }
+
+    public static TypeDefinition GetTypeDef (TypeReference typeRef) {
       TypeDefinition typeDef = null;
-      allTypes.TryGetValue(typeRef.FullName, out typeDef);
+      var fullName = GetTypeLookupName(typeRef);
+      allTypes.TryGetValue(fullName, out typeDef);
       return typeDef;
     }
 
@@ -309,6 +327,7 @@ namespace cslibgen {
       curNsPath = typeDef.Namespace.ToLower().Replace(".", System.IO.Path.DirectorySeparatorChar.ToString());
       curFilePath = System.IO.Path.Combine(outputDir, curNsPath);
       curTypeName = GetFinalTypeBaseName(typeDef);
+      curType = typeDef;
       curFileName = System.IO.Path.Combine(curFilePath, curTypeName + ".hx");
 
       System.IO.Directory.CreateDirectory(curFilePath);
@@ -413,14 +432,14 @@ namespace cslibgen {
 
         foreach ( var eventDef in typeDef.Events ) {
 
-          var eventArgType = GetEventArgType(eventDef.EventType);
-
+          int eventNumParams;
+          var eventArgType = GetEventArgType(eventDef.EventType, out eventNumParams);
           if ( eventArgType != null ) {
-
             if ( eventDef.AddMethod.IsPublic ) {
-
+              var eventClass = eventNumParams == 1 ? "dotnet.system.NativeEvent1" : "dotnet.system.NativeEvent";
+              var typeName = MakeTypeName(eventArgType);
               sw.Write("  public " + (eventDef.AddMethod.IsStatic ? "static " : "") +
-                       "var " + eventDef.Name + "(default,null) : dotnet.system.NativeEvent<" + MakeTypeName(eventArgType) + ">;\n");
+                       "var " + eventDef.Name + "(default,null) : " + eventClass + "<" + typeName + ">;\n");
             }
           }
 
@@ -652,14 +671,39 @@ namespace cslibgen {
       }
     }
 
-    public static TypeReference GetEventArgType(TypeReference handlerRef) {
+    public static TypeReference GetEventArgType (TypeReference handlerRef, out int numParams) {
       var handlerDef = GetTypeDef(handlerRef);
       if ( handlerDef != null ) {
         var invokeMethod = handlerDef.Methods.SingleOrDefault((arg) => arg.Name == "Invoke");
-        if ( invokeMethod != null && invokeMethod.Parameters.Count == 2 ) {
-          return invokeMethod.Parameters[1].ParameterType;
+        if ( invokeMethod != null ) {
+          numParams = invokeMethod.Parameters.Count;
+          if ( invokeMethod.Parameters.Count == 1 || invokeMethod.Parameters.Count == 2 ) {
+            var type = ( invokeMethod.Parameters.Count == 2 ) 
+              ? invokeMethod.Parameters[1].ParameterType
+              : invokeMethod.Parameters[0].ParameterType;
+            // Handle generic delegates
+            if ( type.IsGenericParameter ) {
+              if ( handlerRef.IsGenericInstance && handlerDef.HasGenericParameters ) {
+                var genType = (GenericInstanceType)handlerRef;
+
+                var paramIndex = 0;
+                foreach ( var param in handlerDef.GenericParameters ) {
+                  if ( param.Name == type.Name ) {
+                    break;
+                  }
+                  paramIndex++;
+                }
+
+                if ( paramIndex < handlerDef.GenericParameters.Count ) {
+                  type = genType.GenericArguments[paramIndex];
+                }
+              }
+            }
+            return type;
+          }
         }
       }
+      numParams = -1;
       return null;
     }
         
@@ -781,28 +825,36 @@ namespace cslibgen {
       return sb.ToString();
     }
 
-    public static string MakeTypeName(TypeReference typeRef, bool useExactType = false) {
-      if ( typeRef.IsGenericParameter ) {
+    public static TypeReference GetTopLevelDeclaringType (TypeReference typeRef) {
+      var declaring = typeRef.DeclaringType;
+      while (declaring != null && declaring.DeclaringType != null) {
+        declaring = declaring.DeclaringType;
+      }
+      return declaring;
+    }
+
+    public static string MakeTypeName (TypeReference typeRef, bool useExactType = false) {
+      if (typeRef.IsGenericParameter) {
 
         // Handle generic methods with arrays with type parameters..
-        if ( curMethDef != null && curMethDef.HasGenericParameters && typeRef.IsGenericParameter &&
-          curMethDef.GenericParameters.FirstOrDefault((arg) => arg.Name == typeRef.Name) != null ) {
+        if (curMethDef != null && curMethDef.HasGenericParameters && typeRef.IsGenericParameter &&
+          curMethDef.GenericParameters.FirstOrDefault((arg) => arg.Name == typeRef.Name) != null) {
           return "Dynamic";
         }
 
         return typeRef.Name;
       }
 
-      if ( typeRef.IsByReference || typeRef.IsPointer ) {
+      if (typeRef.IsByReference || typeRef.IsPointer) {
         return MakeTypeName(typeRef.GetElementType());
       }
 
-      if ( typeRef is ArrayType ) {
+      if (typeRef is ArrayType) {
         var arrayType = typeRef as ArrayType;
 
         // Handle generic methods with arrays with type parameters..
-        if ( curMethDef != null && curMethDef.HasGenericParameters && arrayType.ElementType.IsGenericParameter &&
-          curMethDef.GenericParameters.FirstOrDefault((arg) => arg.Name == arrayType.ElementType.Name) != null ) {
+        if (curMethDef != null && curMethDef.HasGenericParameters && arrayType.ElementType.IsGenericParameter &&
+          curMethDef.GenericParameters.FirstOrDefault((arg) => arg.Name == arrayType.ElementType.Name) != null) {
 
           // Must be an array type (C# will automatically fill in the type parameter based on the array).
           return "dotnet.system.Array";
@@ -813,8 +865,8 @@ namespace cslibgen {
           "<" + MakeTypeName(arrayType.ElementType, true) + ">";
       }
 
-      if ( useExactType ) {
-        switch ( typeRef.FullName ) {
+      if (useExactType) {
+        switch (typeRef.FullName) {
         case "System.String":
           return "String";
         case "System.Boolean":
@@ -836,7 +888,7 @@ namespace cslibgen {
           return "UIAtlas.UIAtlas_Sprite";
         }
       } else {
-        switch ( typeRef.FullName ) {
+        switch (typeRef.FullName) {
         case "System.Void":
           return "Void";
         case "System.Object":
@@ -878,15 +930,41 @@ namespace cslibgen {
       var rootPackages = new HashSet<String> {
         "UnityEngine"
       };
+      if (packageNameOverride != null) {
+        rootPackages.Add(packageNameOverride);
+      }
 
       // Make full type name (including generic params).
       var sb = new StringBuilder();
-      if ( typeRef.Namespace != null && typeRef.Namespace.Length > 0 && typeRef.Namespace != curNs ) {
-        if(rootPackages.Contains(typeRef.Namespace)) {
-          sb.Append(typeRef.Namespace.ToLower() + ".");
+      string ns = null;
+      if (typeRef.Namespace != null && typeRef.Namespace.Length > 0 && typeRef.Namespace != curNs) {
+        ns = typeRef.Namespace;
+      } else if (typeRef.DeclaringType != null) { 
+        var declaringType = GetTopLevelDeclaringType(typeRef);
+        if ( declaringType != curType ) {
+          if (declaringType.Namespace != null && declaringType.Namespace.Length > 0) {
+            ns = declaringType.Namespace;
+          } else if (packageNameOverride != null) {
+            ns = packageNameOverride;
+          } else {
+            ns = curNs;
+          }
         }
-        else {
-          sb.Append("dotnet." + typeRef.Namespace.ToLower() + ".");
+      }
+
+      if (ns != null) {
+        if (rootPackages.Contains(ns)) {
+          sb.Append(ns.ToLower() + ".");
+        } else {
+          sb.Append("dotnet." + ns.ToLower() + ".");
+        }
+      }
+
+      if (typeRef.DeclaringType != null) {
+        var declaringType = GetTopLevelDeclaringType(typeRef);
+        if ( declaringType != curType ) {
+          sb.Append(GetFinalTypeBaseName(declaringType));
+          sb.Append(".");
         }
       }
       sb.Append(typeBaseName);
