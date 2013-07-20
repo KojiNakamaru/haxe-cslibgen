@@ -12,7 +12,7 @@ namespace cslibgen {
   {
     public static string outputDir = "";
     public static bool skipPackagePrefix = false;
-    public static string packageNameOverride = "";
+    public static string packageNameOverride= null;
     public static List<string> assemblies = new List<string>();
     public static Dictionary<string, TypeDefinition> allTypes = new Dictionary<string, TypeDefinition>();
     public static List<AssemblyDefinition> assemDefs = new List<AssemblyDefinition>();
@@ -28,6 +28,8 @@ namespace cslibgen {
     public static string curNsPath;
     public static string curFilePath;
     public static string curFileName;
+    public static HashSet<String> rootPackages = new HashSet<string>();
+    public static Dictionary<string,string> overriddenNamespaces = new Dictionary<string,string>();
     public static HashSet<string> haxeKeywords = new HashSet<string> {
       "function", "class", "static", "var", "if", "else", "while", "do", "for", "break", "return", "continue",
       "extends", "implements", "import", "switch", "case", "default", "private", "public", "try", "catch",
@@ -46,8 +48,10 @@ namespace cslibgen {
                           "  Options:\n" +
                           "  -o The output folder into which the bindings will be placed.\n" +
                           "  -i An input directory from which to load assemblies.\n" +
-                          "  -p Package name override [optional]\n" +
-                          "  -s Skip package prefix\n" );
+                          "  -p Package name override source_package dest_package  [optional]\n" +
+                          "  -s Skip 'dotnet' package prefix for all generated classes [optional] \n" +
+                          "  -r Specify a root package name, i.e. skip 'dotnet' prefix for this package [optional] \n"
+                          );
         return 1;
       }
 
@@ -66,6 +70,9 @@ namespace cslibgen {
         } else if ( args[i] == "-s" ) {
           skipPackagePrefix = true;
           i++;
+        } else if ( args[i] == "-r" ) {
+          rootPackages.Add(args[i+1].ToLower());
+          i += 2;
         } else {
           assemblies.Add(args[i]);
           i++;
@@ -156,6 +163,14 @@ namespace cslibgen {
         // We use this list to convert these type names using a number suffix later.
         foreach ( var typeDef in mainModule.Types ) {
           allTypes[typeDef.FullName] = typeDef;
+          if ( packageNameOverride != null || skipPackagePrefix ) {
+            var newNS = packageNameOverride != null ? packageNameOverride : "";
+            if ( typeDef.Namespace != null && typeDef.Namespace != "" ) {
+             if ( packageNameOverride != null ) newNS += ".";
+             newNS += typeDef.Namespace.ToLower();
+            }
+            overriddenNamespaces[typeDef.Namespace] = newNS;
+          }
           foreach ( var nestedType in typeDef.NestedTypes ) {
             allTypes[nestedType.FullName] = nestedType;
           }
@@ -344,7 +359,7 @@ namespace cslibgen {
       if (skipPackagePrefix) {
         os.Write("package " + typeDef.Namespace.ToLower() + ";\n\n");
       }
-      else if(packageNameOverride != "") {
+      else if(packageNameOverride != null) {
         string n = typeDef.Namespace == "" ? packageNameOverride : packageNameOverride + "." + typeDef.Namespace.ToLower();
         os.Write("package " + n + ";\n\n");
       }
@@ -926,14 +941,6 @@ namespace cslibgen {
       //        curImports[fullTypeName] = typeRef;
       //      }
 
-      // don't preface these packages
-      var rootPackages = new HashSet<String> {
-        "UnityEngine"
-      };
-      if (packageNameOverride != null) {
-        rootPackages.Add(packageNameOverride);
-      }
-
       // Make full type name (including generic params).
       var sb = new StringBuilder();
       string ns = null;
@@ -944,8 +951,6 @@ namespace cslibgen {
         if ( declaringType != curType ) {
           if (declaringType.Namespace != null && declaringType.Namespace.Length > 0) {
             ns = declaringType.Namespace;
-          } else if (packageNameOverride != null) {
-            ns = packageNameOverride;
           } else {
             ns = curNs;
           }
@@ -953,7 +958,10 @@ namespace cslibgen {
       }
 
       if (ns != null) {
-        if (rootPackages.Contains(ns)) {
+        string overriden;
+        if (overriddenNamespaces.TryGetValue(ns, out overriden)) {
+          sb.Append(overriden + ".");
+        } else if (rootPackages.Contains(ns.ToLower())) {
           sb.Append(ns.ToLower() + ".");
         } else {
           sb.Append("dotnet." + ns.ToLower() + ".");
@@ -1026,7 +1034,13 @@ namespace cslibgen {
         }
         sb.Append(MakeParamName(paramDef.Name));
         sb.Append(":");
-        sb.Append(MakeTypeName(paramDef.ParameterType));
+        var hxTypeName = MakeTypeName(paramDef.ParameterType);
+        if ( paramDef.IsOut ) {
+          hxTypeName = "cs.Out<" + hxTypeName + ">";
+        } else if ( paramDef.ParameterType.IsByReference ) {
+          hxTypeName = "cs.Ref<" + hxTypeName + ">";
+        }
+        sb.Append(hxTypeName);
         first = false;
       }
       return sb.ToString();
